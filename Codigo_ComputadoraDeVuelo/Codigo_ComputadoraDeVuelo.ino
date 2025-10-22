@@ -6,7 +6,7 @@
 
 void setup() {
   // put your setup code here, to run once:
-serialprint();
+Serial.print("Hola com oestan soy avionico");
 }
 
 void loop() {
