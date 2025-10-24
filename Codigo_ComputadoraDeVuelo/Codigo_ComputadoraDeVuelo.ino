@@ -16,6 +16,8 @@
 
 #define SD_CS // SD por SPI
 
+#define SIGN_LED // LED para las señales
+
 //-----------------MISCELANEO --------
 #define PresionMarHPa (1013.25)
 #define anguloDeclinacion 3.883
@@ -32,6 +34,10 @@ bool fileOK = false;
 bool apogeo = false;
 bool recuperacion = false;
 
+int numestado = 0;
+
+unsigned long tiempoMuestreoAnterior = 0;
+unsigned long intervaloDeMuestreo = 100;
 
 //------------------ SENSORES
 Adafruit_MPU6050 mpu;
@@ -198,6 +204,40 @@ void Telemetria(float altitudActual, float headingDeg, const char* cardinal) {
   Serial.print("° | Dirección: "); Serial.println(cardinal);
 }
 
+//---------------GESTION DE ESTADO-----------------
+void gestionEstados(unsignedd long tiempoActual){
+
+  switch (numestado){
+
+    case ESTADO_1_STANDBY:
+    intervaloDeMuestreo = 100; // Work In Progress (WIP)
+
+    //TRANSICIÓN: Aqui la idea es que la variable que detone al cambio de estado sea
+    // la aceleración: una aceleración abrupta (lo que indicaría que ya se lanzó el cohete)
+    break;
+
+    case ESTADO_2_VUELO:
+    intervaloDeMuestreo = 10;
+
+
+  
+    //TRANSICIÓN: Aqui la idea es que la variable que detone al cambio de estado sea
+    // EL APOGEO: 
+    break;
+
+    case ESTADO_3_DESCENSO:
+
+
+    break;
+
+    case ESTADO_4_RECOVERY:
+
+
+    break;
+  }
+
+
+}
 
   
 
@@ -207,14 +247,39 @@ void setup() {
   Wire.begin();
   SPI.begin();
 
+  //Inicialización de LED y Buzzer
+  pinMode(SIGN_LED, OUTPUT)
 
-  // FASE 1 Inicialización de sensores
+
+  // ESTADO 0 Inicialización de sensores
+
   mpuOK = inicializarMPU();
   hmcOK = inicializarHMC();
   bmeOK = inicializarBME();
   cardOK = inicializarSD();
   fileOK = nuevoArchivo();
 
+  bool todoOK = mpuok & hmcOK & bmeOK & cardOK & fileOK;
+
+    // TRANSICIÓN ESTADO 0 -> ESTADO 1
+    if (!todoOK){
+      Serial.println("No se han inicializado todos los sensores! No se pasará a la siguiente fase.");
+      
+      for(int i = 0 ; i < 5 ; i++){ //Señal de ERROR
+
+        digitalWrite(SIGN_LED, HIGH);
+        delay(100);
+        digitalWrite(SIGN_LED, low);
+        delay(100);
+      }
+    }
+    else{
+      Serial.printLn("Todos los sistemas inicializados. Se pasará a Standby");
+      digitalWrite(SIGN_LED, HIGH);
+      delay(500);
+      digitalWrite(SIGN_LED, LOW);
+      numestado++;
+      }
 
   PresionInicial(); //Calibrando Presión Inicial
 }
@@ -222,6 +287,11 @@ void setup() {
 
 void loop() {
   
+  unsigned long tiempoActual = milis(); // Quiero limitar la tasa de muestreo para ciertos Estados:
+                                        // En el Standby: limitar a 10Hz para ahorrar batería. Pero
+                                        // Esto quedaría en WIP.
 
+  //AQUÍ DEBERÍA ESTAR LA FUNCIÓN gestionEstado();
 
+  //AQUÍ PONER LAS FUNCIONES QUE ESCRIBAN LOS DATOS EN LA SD Y QUE CALCULEN LA ALTITUD Y VELOCIDAD.
 }
