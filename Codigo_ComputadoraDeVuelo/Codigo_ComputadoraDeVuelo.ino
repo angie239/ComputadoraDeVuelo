@@ -13,6 +13,8 @@
 #define BME_MOSI 
 #define BME_CS 
 
+#define PresionMarHPa (1013.25)
+
 
 
 bool mpuOK = false; //para su inicialización
@@ -83,10 +85,36 @@ float presionInicial = 0;
     return false;
   }
 
+  // ---------------------- CALIBRACIÓN ----------------------
+  void PresionInicial() { //Calculo de Presión Inicial
+    if (!bmeOK) return;
+
+    Serial.println("Calibrando presión inicial...");
+    float suma = 0;
+    const int muestras = 50; //muestras tomadas
+    for (int i = 0; i < muestras; i++) {
+      sumaPresiones += bme.readPressure(); //Suma Total de Presiones
+      delay(10); //0.5 [s] para calculo de presión inicial 
+    }
+    presionInicial = sumaPresiones / muestras; //Obteniendo Presion inicial promedio
+
+    Serial.print("Presión inicial: "); Serial.print(presionInicial); Serial.println(" [Pa]");
+  }
+
+  
 
 void setup() {
-  // put your setup code here, to run once:
-Serial.print("Hola com oestan soy avionico");
+
+  Serial.begin(115200);
+  Wire.begin();
+
+
+  // Inicialización de sensores
+  mpuOK = inicializarMPU();
+  hmcOK = inicializarHMC();
+  bmeOK = inicializarBME();
+
+  PresionInicial(); //Calibrando Presión Inicial
 }
 
 void loop() {
