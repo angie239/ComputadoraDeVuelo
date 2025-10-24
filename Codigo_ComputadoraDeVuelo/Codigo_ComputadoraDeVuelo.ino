@@ -17,6 +17,14 @@
 #define SD_CS // SD por SPI
 
 #define SIGN_LED // LED para las señales
+#define PIN_RECUPERACION //Sistema de Recuperación
+
+//---------ESTADOS-----------
+#define ESTADO_1_STANDBY 1
+#define ESTADO_2_VUELO 2
+#define ESTADO_3_DESCENSO 3
+#define ESTADO_4_RECOVERY 4
+
 
 //-----------------MISCELANEO --------
 #define PresionMarHPa (1013.25)
@@ -31,7 +39,8 @@ bool magOK = false;
 bool cardOK = false;
 bool fileOK = false;
 
-bool apogeo = false;
+bool Apogeo = false;
+bool apogeoDetectado = false;
 bool recuperacion = false;
 
 int numestado = 0;
@@ -42,13 +51,12 @@ unsigned long intervaloDeMuestreo = 100;
 //------------------ SENSORES
 Adafruit_MPU6050 mpu;
 Adafruit_BME280 bme;
-Adafruit_BMP085 bmp; // creo que solo vamos a usar el BME280 y pues este quedaría sin función??
+//  Adafruit_BMP085 bmp; // creo que solo vamos a usar el BME280 y pues este quedaría sin función??
 Adafruit_HMC5883_Unified mag = Adafruit_HMC5883_Unified(12345);
 
 //-------------------------VARIABLES
 float altitudMax = 0;
 float altitudActual = 0;
-float altitudInicial = 0;
 float presionInicial = 0;
 
 
@@ -147,7 +155,7 @@ float presionInicial = 0;
     if (!bmeOK) return;
 
     Serial.println("Calibrando presión inicial...");
-    float suma = 0;
+    float sumaPresiones = 0;
     const int muestras = 50; //muestras a tomar
     for (int i = 0; i < muestras; i++) {
       sumaPresiones += bme.readPressure(); //Suma Total de Presiones
@@ -158,7 +166,7 @@ float presionInicial = 0;
     Serial.print("Presión inicial: "); Serial.print(presionInicial); Serial.println(" [Pa]");
   }
 
-///////////////////
+////////////////////////////////////////////////
 
   void calculaOrientacion(float &headingDegrees, const char* &cardinal) { //Calibración magnetómetro
     if (!magOK) return;
@@ -168,35 +176,74 @@ float presionInicial = 0;
     sensors_event_t event;
     mag.getEvent(&event);
      
-   float headingRad = atan2(event.magnetic.y, event.magnetic.x);
-    headingGrados = headingRad * 180.0 / PI;
-    headingGrados += anguloDeclinacion; //Declinación magnética aprox. de Morelos?? es donde es el lanzamiento
+    float headingRad = atan2(event.magnetic.y, event.magnetic.x);
+    headingDegrees = headingRad * 180.0 / PI;
+    headingDegrees += anguloDeclinacion; //Declinación magnética aprox. de Morelos?? es donde es el lanzamiento
 
 
-      if (headingGrados < 0) headingGrados += 360;
-      if (headingGrados >= 360) headingGrados -= 360;
+      if (headingDegrees < 0) headingDegrees += 360;
+      if (headingDegrees >= 360) headingDegrees -= 360;
 
       // Dirección Cardinal
-      if (headingGrados > 348.75 || headingGrados <= 11.25) cardinal = "N";
-      else if (headingGrados <= 33.75) cardinal = "NNE";
-      else if (headingGrados <= 56.25) cardinal = "NE";
-      else if (headingGrados <= 78.75) cardinal = "ENE";
-      else if (headingGrados <= 101.25) cardinal = "E";
-      else if (headingGrados <= 123.75) cardinal = "ESE";
-      else if (headingGrados <= 146.25) cardinal = "SE";
-      else if (headingGrados <= 168.75) cardinal = "SSE";
-      else if (headingGrados <= 191.25) cardinal = "S";
-      else if (headingGrados <= 213.75) cardinal = "SSW";
-      else if (headingGrados <= 236.25) cardinal = "SW";
-      else if (headingGrados <= 258.75) cardinal = "WSW";
-      else if (headingGrados <= 281.25) cardinal = "W";
-      else if (headingGrados <= 303.75) cardinal = "WNW";
-      else if (headingGrados <= 326.25) cardinal = "NW";
+      if (headingDegrees > 348.75 || headingDegrees <= 11.25) cardinal = "N";
+      else if (headingDegrees <= 33.75) cardinal = "NNE";
+      else if (headingDegrees <= 56.25) cardinal = "NE";
+      else if (headingDegrees <= 78.75) cardinal = "ENE";
+      else if (headingDegrees <= 101.25) cardinal = "E";
+      else if (headingDegrees <= 123.75) cardinal = "ESE";
+      else if (headingDegrees <= 146.25) cardinal = "SE";
+      else if (headingDegrees <= 168.75) cardinal = "SSE";
+      else if (headingDegrees <= 191.25) cardinal = "S";
+      else if (headingDegrees <= 213.75) cardinal = "SSW";
+      else if (headingDegrees <= 236.25) cardinal = "SW";
+      else if (headingDegrees <= 258.75) cardinal = "WSW";
+      else if (headingDegrees <= 281.25) cardinal = "W";
+      else if (headingDegrees <= 303.75) cardinal = "WNW";
+      else if (headingDegrees <= 326.25) cardinal = "NW";
       else cardinal = "NNW";
   }
 //////////////////////////////////////////////////////////////////////////////////
    
- //--------TELEMETRÍA   
+  float calcularAltitud() {
+    if (!bmeOK) return 0.0;
+
+    float presionActual = bme.readPressure();  // Lectura de presión actual
+      float ratio = presionActual / presionInicial;
+      altitudActual = 44330.0 * (1.0 - pow(ratio, 1.0 / 5.255)); //Calculo de altitudActual 
+
+      if (altitudActual > altitudMax){
+        altitudMax = altitudActual; //actualización de altitud
+      } 
+        return altitudActual;
+  }
+
+//---------Aceleración------
+  float leerAceleracion(float &ax, float &ay, float &az){
+    sensors_event_t aEvent, gEvent, tempEvent;
+    mpu.getEvent(&aEvent, &gEvent, &tempEvent);
+    ax = aEvent.acceleration.x;
+    ay = aEvent.acceleration.y;
+    az = aEvent.acceleration.z;
+    return sqrt(ax*ax + ay*ay + az*az);
+}
+
+//---------APOGEO-------------
+  void confirmarApogeo(float altitudActual, float aceleracionTotal){  //Detección de apogeo 
+
+    //Condiciones para confirmar Apogeo
+    //Confirmación con aceleración y altitud
+    if (!apogeoDetectado && altitudActual < altitudMax &&
+        aceleracionTotal > 9  &&  aceleracionTotal < 10.5){
+          apogeoDetectado = true; 
+           
+            Serial.print("Apogeo detectado: "); Serial.println(altitudMax); Serial.println(" [m]");
+            digitalWrite(PIN_RECUPERACION, HIGH);  // Activar sistema de recuperación
+        }
+  }
+
+/////////////////////////////////////////////////////////////////////////////////////////
+
+ //--------TELEMETRÍA    
 void Telemetria(float altitudActual, float headingDeg, const char* cardinal) {
   Serial.print("Altitud: "); Serial.print(altitudActual);
   Serial.print(" [m] | Max: "); Serial.print(altitudMax); 
@@ -205,7 +252,7 @@ void Telemetria(float altitudActual, float headingDeg, const char* cardinal) {
 }
 
 //---------------GESTION DE ESTADO-----------------
-void gestionEstados(unsignedd long tiempoActual){
+void gestionEstados(unsigned long tiempoActual){
 
   switch (numestado){
 
@@ -248,18 +295,18 @@ void setup() {
   SPI.begin();
 
   //Inicialización de LED y Buzzer
-  pinMode(SIGN_LED, OUTPUT)
+  pinMode(SIGN_LED, OUTPUT); //LED neopixel?
 
 
   // ESTADO 0 Inicialización de sensores
 
   mpuOK = inicializarMPU();
-  hmcOK = inicializarHMC();
+  magOK = inicializarHMC();
   bmeOK = inicializarBME();
   cardOK = inicializarSD();
   fileOK = nuevoArchivo();
 
-  bool todoOK = mpuok & hmcOK & bmeOK & cardOK & fileOK;
+  bool todoOK = mpuOK & magOK & bmeOK & cardOK & fileOK;
 
     // TRANSICIÓN ESTADO 0 -> ESTADO 1
     if (!todoOK){
@@ -269,12 +316,12 @@ void setup() {
 
         digitalWrite(SIGN_LED, HIGH);
         delay(100);
-        digitalWrite(SIGN_LED, low);
+        digitalWrite(SIGN_LED, LOW);
         delay(100);
       }
     }
     else{
-      Serial.printLn("Todos los sistemas inicializados. Se pasará a Standby");
+      Serial.println("Todos los sistemas inicializados. Se pasará a Standby");
       digitalWrite(SIGN_LED, HIGH);
       delay(500);
       digitalWrite(SIGN_LED, LOW);
@@ -287,7 +334,7 @@ void setup() {
 
 void loop() {
   
-  unsigned long tiempoActual = milis(); // Quiero limitar la tasa de muestreo para ciertos Estados:
+  unsigned long tiempoActual = millis(); // Quiero limitar la tasa de muestreo para ciertos Estados:
                                         // En el Standby: limitar a 10Hz para ahorrar batería. Pero
                                         // Esto quedaría en WIP.
 
