@@ -13,19 +13,24 @@
 #define BME_MISO //faltan pines
 #define BME_MOSI 
 #define BME_CS 
+
 #define SD_CS // SD por SPI
 
 //-----------------MISCELANEO --------
 #define PresionMarHPa (1013.25)
+#define anguloDeclinacion 3.883
 File registro;
 char filename[20];
 int numvuel = 0;
 
 bool mpuOK = false; //para su inicialización
 bool bmeOK = false;  //funciona o no
-bool hmcOK = false;
+bool magOK = false;
 bool cardOK = false;
 bool fileOK = false;
+
+bool apogeo = false;
+bool recuperacion = false;
 
 
 //------------------ SENSORES
@@ -39,6 +44,7 @@ float altitudMax = 0;
 float altitudActual = 0;
 float altitudInicial = 0;
 float presionInicial = 0;
+
 
 // ------------------ INICIALIZACION SENSORES
 
@@ -80,7 +86,7 @@ float presionInicial = 0;
     Serial.println("Inicializando HMC...");
     int reintentos = 0;
     while (reintentos < 3) {
-      if (bme.begin()) {
+      if (mag.begin()) {
         Serial.println("HMC inicializado");
         return true;
       }
@@ -128,7 +134,7 @@ float presionInicial = 0;
 
       return false;      
     }
-
+  }
 
   // ---------------------- CALIBRACIÓN ----------------------
   void PresionInicial() { //Calculo de Presión Inicial
@@ -146,11 +152,53 @@ float presionInicial = 0;
     Serial.print("Presión inicial: "); Serial.print(presionInicial); Serial.println(" [Pa]");
   }
 
+///////////////////
+
+  void calculaOrientacion(float &headingDegrees, const char* &cardinal) { //Calibración magnetómetro
+    if (!magOK) return;
+
+    Serial.println("Calibrando magnetómetro...");
+  
+    sensors_event_t event;
+    mag.getEvent(&event);
+     
+   float headingRad = atan2(event.magnetic.y, event.magnetic.x);
+    headingGrados = headingRad * 180.0 / PI;
+    headingGrados += anguloDeclinacion; //Declinación magnética aprox. de Morelos?? es donde es el lanzamiento
 
 
+      if (headingGrados < 0) headingGrados += 360;
+      if (headingGrados >= 360) headingGrados -= 360;
 
-
+      // Dirección Cardinal
+      if (headingGrados > 348.75 || headingGrados <= 11.25) cardinal = "N";
+      else if (headingGrados <= 33.75) cardinal = "NNE";
+      else if (headingGrados <= 56.25) cardinal = "NE";
+      else if (headingGrados <= 78.75) cardinal = "ENE";
+      else if (headingGrados <= 101.25) cardinal = "E";
+      else if (headingGrados <= 123.75) cardinal = "ESE";
+      else if (headingGrados <= 146.25) cardinal = "SE";
+      else if (headingGrados <= 168.75) cardinal = "SSE";
+      else if (headingGrados <= 191.25) cardinal = "S";
+      else if (headingGrados <= 213.75) cardinal = "SSW";
+      else if (headingGrados <= 236.25) cardinal = "SW";
+      else if (headingGrados <= 258.75) cardinal = "WSW";
+      else if (headingGrados <= 281.25) cardinal = "W";
+      else if (headingGrados <= 303.75) cardinal = "WNW";
+      else if (headingGrados <= 326.25) cardinal = "NW";
+      else cardinal = "NNW";
+  }
+//////////////////////////////////////////////////////////////////////////////////
+   
+ //--------TELEMETRÍA   
+void Telemetria(float altitudActual, float headingDeg, const char* cardinal) {
+  Serial.print("Altitud: "); Serial.print(altitudActual);
+  Serial.print(" [m] | Max: "); Serial.print(altitudMax); 
+  Serial.print(" [m] | Heading: "); Serial.print(headingDeg);
+  Serial.print("° | Dirección: "); Serial.println(cardinal);
 }
+
+
   
 
 void setup() {
