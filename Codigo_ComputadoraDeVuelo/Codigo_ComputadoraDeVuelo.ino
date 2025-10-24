@@ -6,20 +6,26 @@
 #include <Adafruit_MPU6050.h>
 #include <SPI.h>
 #include <SD.h>
+#include <stdio.h>
 
 //------------------PINES--------------------
 #define BME_SCK  //  BME280
 #define BME_MISO //faltan pines
 #define BME_MOSI 
 #define BME_CS 
+#define SD_CS // SD por SPI
 
+//-----------------MISCELANEO --------
 #define PresionMarHPa (1013.25)
-
-
+File registro;
+char filename[20];
+int numvuel = 0;
 
 bool mpuOK = false; //para su inicialización
 bool bmeOK = false;  //funciona o no
 bool hmcOK = false;
+bool cardOK = false;
+bool fileOK = false;
 
 
 //------------------ SENSORES
@@ -35,6 +41,7 @@ float altitudInicial = 0;
 float presionInicial = 0;
 
 // ------------------ INICIALIZACION SENSORES
+
   bool inicializarMPU() { //--------MPU6050(imu)
     Serial.println("Inicializando MPU...");
     int reintentos = 0;
@@ -85,39 +92,88 @@ float presionInicial = 0;
     return false;
   }
 
+    bool inicializarSD() { //--------SDCard(memoria )
+    Serial.println("Inicializando Tarjeta SD...");
+    int reintentos = 0;
+    while (reintentos < 3) {
+      if (SD.begin(SD_CS)) {
+        Serial.println("SD inicializada");
+        return true;
+      }
+      reintentos++;
+      Serial.print("Reintento SD: "); Serial.println(reintentos);
+      delay(50);
+    }
+    Serial.println("La tarjeta SD no responde");
+    return false;
+  }
+
+  //-------------------------CREACIÓN DE ARCHIVO DE VUELO-----------
+  bool nuevoArchivo(){
+    if (cardOK==false) return false;
+
+    do {
+      snprintf(filename, sizeof(filename),"VUELO_%03i.csv", numvuel++);
+    } while (SD.exists(filename));
+
+    registro = SD.open(filename, FILE_WRITE);
+    if (registro) {
+      Serial.print("Creando archivo de registro... ");
+      Serial.println(filename);
+      registro.println("Tiempo [ms],Altitud [km],Heading,Roll,Pitch,AccX,AccY,AccZ");
+      registro.close();
+      return true;
+    } else {
+      Serial.println("Error al crear archivo");
+
+      return false;      
+    }
+
+
   // ---------------------- CALIBRACIÓN ----------------------
   void PresionInicial() { //Calculo de Presión Inicial
     if (!bmeOK) return;
 
     Serial.println("Calibrando presión inicial...");
     float suma = 0;
-    const int muestras = 50; //muestras tomadas
+    const int muestras = 50; //muestras a tomar
     for (int i = 0; i < muestras; i++) {
       sumaPresiones += bme.readPressure(); //Suma Total de Presiones
       delay(10); //0.5 [s] para calculo de presión inicial 
     }
-    presionInicial = sumaPresiones / muestras; //Obteniendo Presion inicial promedio
+    presionInicial = sumaPresiones / muestras; //Obtención de Presion inicial promedio
 
     Serial.print("Presión inicial: "); Serial.print(presionInicial); Serial.println(" [Pa]");
   }
 
+
+
+
+
+}
   
 
 void setup() {
 
   Serial.begin(115200);
   Wire.begin();
+  SPI.begin();
 
 
-  // Inicialización de sensores
+  // FASE 1 Inicialización de sensores
   mpuOK = inicializarMPU();
   hmcOK = inicializarHMC();
   bmeOK = inicializarBME();
+  cardOK = inicializarSD();
+  fileOK = nuevoArchivo();
+
 
   PresionInicial(); //Calibrando Presión Inicial
 }
 
+
 void loop() {
-  // put your main code here, to run repeatedly:
+  
+
 
 }
