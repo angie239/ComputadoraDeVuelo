@@ -28,7 +28,7 @@
 
 //-----------------MISCELANEO --------
 #define PresionMarHPa (1013.25)
-#define anguloDeclinacion 3.883
+#define anguloDeclinacion 3.83
 File registro;
 char filename[20];
 int numvuel = 0;
