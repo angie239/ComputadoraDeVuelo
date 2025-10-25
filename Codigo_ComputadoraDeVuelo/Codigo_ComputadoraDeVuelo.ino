@@ -8,21 +8,25 @@
 #include <SD.h>
 #include <stdio.h>
 
-//------------------PINES--------------------
-#define BME_SCK  //  BME280
-#define BME_MISO //faltan pines
-#define BME_MOSI 
-#define BME_CS 
+//------------------SPI--------------------
+#define SCK   2 
+#define MISO  8
+#define MOSI  7
+#define SD_CS 5  // SD por SPI
 
-#define SD_CS // SD por SPI
+#define SIGN_LED 22 // LED para las señales
+#define BUZZER 23
 
-#define SIGN_LED // LED para las señales
-#define PIN_RECUPERACION //Sistema de Recuperación
-#define PIN_BATERIA
+//-------- Sistema de Recuperación ------
+#define PIN_RECUPERACION1 20 
+#define PIN_RECUPERACION2 21
 
-// Pines del GY-87 
-#define GY_SCL   //faltan pines
-#define GY_SDA    
+#define PIN_BATERIA1 26
+#define PIN_BATERIA2 27
+
+// --------------- I2C ------------------ 
+#define GY_SCL   1
+#define GY_SDA   0 
 
 
 //---------ESTADOS-----------
@@ -30,6 +34,7 @@
 #define ESTADO_2_VUELO 2
 #define ESTADO_3_DESCENSO 3
 #define ESTADO_4_RECOVERY 4
+
 
 
 //-----------------MISCELANEO --------
@@ -248,11 +253,11 @@ float voltaje = 0;
            
             Serial.print("Apogeo detectado: "); Serial.println(altitudMax); Serial.println(" [m]");
             
-            digitalWrite(PIN_RECUPERACION, HIGH);  // Activar sistema de recuperación
+            digitalWrite(PIN_RECUPERACION, LOW);  // Activar sistema de recuperación
             Serial.println("Sistema de recuperación activado");
 
             delay(2000);  // LED encendido (similación de carga pirotécnica)
-            digitalWrite(PIN_RECUPERACION, LOW);
+            digitalWrite(PIN_RECUPERACION, HIGH);
         }
   }
 
@@ -268,10 +273,14 @@ void Telemetria(float altitudActual, float headingDeg, const char* cardinal) {
 
 // ---------------- NIVEL BATERIA ----
   float voltajeBateria() {
-    int lectura = analogRead(PIN_BATERIA); // Leer valor ADC
-    float voltaje = (lectura / 4095.0) * 3.3 * 4.3; // Divisor de R1=330[ohms] ; R2=100[ohms]
-    
-    Serial.print("Voltaje batería: "); Serial.print(voltaje); Serial.println(" [V]");
+    int lectura_c1 = analogRead(PIN_BATERIA1);
+    int lectura_c2 = analogRead(PIN_BATERIA2); // Leer valor ADC
+    float voltaje_c1 = (lectura_c1 * 3.3 / 4095.0)* (138.0/91.0) ; // Divisor de R1= 470k[ohms] ; R2=910k[ohms]
+    float voltaje_c2 = (lectura_c2 * 3.3/ 4095.0) * (138.0/91.0); 
+    float bateria = voltaje_c2+voltaje_c1;
+    Serial.print("Voltaje celda1: "); Serial.print(voltaje_c1); Serial.println(" [V]");
+    Serial.print("Voltaje celda2: "); Serial.print(voltaje_c2); Serial.println(" [V]");
+    Serial.print("Voltaje bateria: "); Serial.print(bateria); Serial.println(" [V]");
     return voltaje;
   }
 
@@ -312,16 +321,18 @@ void gestionEstados(unsigned long tiempoActual){
 
 
 void setup() {
-
   Serial.begin(115200);
   Wire.begin();
   SPI.begin();
 
   //Inicialización de LED y Buzzer
   pinMode(SIGN_LED, OUTPUT); //LED neopixel?
-  pinMode(PIN_RECUPERACION, OUTPUT);
+
+  pinMode(PIN_RECUPERACION1, OUTPUT);
+  pinMode(PIN_RECUPERACION2, OUTPUT);
   digitalWrite(SIGN_LED, LOW); // asegurando que no esten activados
-  digitalWrite(PIN_RECUPERACION, LOW);
+  digitalWrite(PIN_RECUPERACION1, HIGH);
+  digitalWrite(PIN_RECUPERACION2, HIGH);
 
   // ESTADO 0 Inicialización de sensores
 
