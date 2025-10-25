@@ -18,6 +18,7 @@
 
 #define SIGN_LED // LED para las señales
 #define PIN_RECUPERACION //Sistema de Recuperación
+#define PIN_BATERIA
 
 //---------ESTADOS-----------
 #define ESTADO_1_STANDBY 1
@@ -28,7 +29,8 @@
 
 //-----------------MISCELANEO --------
 #define PresionMarHPa (1013.25)
-#define anguloDeclinacion 3.83
+#define anguloDeclinacion 3.833 //ángulo en Tenango Morelos
+
 File registro;
 char filename[20];
 int numvuel = 0;
@@ -57,8 +59,10 @@ Adafruit_HMC5883_Unified mag = Adafruit_HMC5883_Unified(12345);
 //-------------------------VARIABLES
 float altitudMax = 0;
 float altitudActual = 0;
+float altitudInicial = 0;
 float presionInicial = 0;
 
+float voltaje = 0;
 
 // ------------------ INICIALIZACION SENSORES
 
@@ -164,7 +168,8 @@ float presionInicial = 0;
     presionInicial = sumaPresiones / muestras; //Obtención de Presion inicial promedio
 
     Serial.print("Presión inicial: "); Serial.print(presionInicial); Serial.println(" [Pa]");
-  }
+    return presionInicial;
+  } 
 
 ////////////////////////////////////////////////
 
@@ -233,11 +238,16 @@ float presionInicial = 0;
     //Condiciones para confirmar Apogeo
     //Confirmación con aceleración y altitud
     if (!apogeoDetectado && altitudActual < altitudMax &&
-        aceleracionTotal > 9  &&  aceleracionTotal < 10.5){
+        aceleracionTotal > 9  &&  aceleracionTotal < 10.5){ ///falta perfeccionar la calibración de rango
           apogeoDetectado = true; 
            
             Serial.print("Apogeo detectado: "); Serial.println(altitudMax); Serial.println(" [m]");
+            
             digitalWrite(PIN_RECUPERACION, HIGH);  // Activar sistema de recuperación
+            Serial.println("Sistema de recuperación activado");
+
+            delay(2000);  // LED encendido (similación de carga pirotécnica)
+            digitalWrite(PIN_RECUPERACION, LOW);
         }
   }
 
@@ -250,6 +260,15 @@ void Telemetria(float altitudActual, float headingDeg, const char* cardinal) {
   Serial.print(" [m] | Heading: "); Serial.print(headingDeg);
   Serial.print("° | Dirección: "); Serial.println(cardinal);
 }
+
+// ---------------- NIVEL BATERIA ----
+  float voltajeBateria() {
+    int lectura = analogRead(PIN_BATERIA); // Leer valor ADC
+    float voltaje = (lectura / 4095.0) * 3.3 * 4.3; // Divisor de R1=330[ohms] ; R2=100[ohms]
+    
+    Serial.print("Voltaje batería: "); Serial.print(voltaje); Serial.println(" [V]");
+    return voltaje;
+  }
 
 //---------------GESTION DE ESTADO-----------------
 void gestionEstados(unsigned long tiempoActual){
@@ -286,7 +305,6 @@ void gestionEstados(unsigned long tiempoActual){
 
 }
 
-  
 
 void setup() {
 
@@ -296,7 +314,7 @@ void setup() {
 
   //Inicialización de LED y Buzzer
   pinMode(SIGN_LED, OUTPUT); //LED neopixel?
-
+  pinMode(PIN_RECUPERACION, OUTPUT);
 
   // ESTADO 0 Inicialización de sensores
 
@@ -306,7 +324,7 @@ void setup() {
   cardOK = inicializarSD();
   fileOK = nuevoArchivo();
 
-  bool todoOK = mpuOK & magOK & bmeOK & cardOK & fileOK;
+  bool todoOK = mpuOK && magOK && bmeOK && cardOK && fileOK;
 
     // TRANSICIÓN ESTADO 0 -> ESTADO 1
     if (!todoOK){
@@ -329,6 +347,15 @@ void setup() {
       }
 
   PresionInicial(); //Calibrando Presión Inicial
+
+     if (!bmeOK) {
+    Serial.println("Error al iniciar BME280");
+    } else {
+    altitudInicial = 44330.0 * (1.0 - pow(presionInicial / 101325.0, 1.0 / 5.255));
+    Serial.print("Altitud inicial: ");
+    Serial.println(altitudInicial);
+    }
+      
 }
 
 
