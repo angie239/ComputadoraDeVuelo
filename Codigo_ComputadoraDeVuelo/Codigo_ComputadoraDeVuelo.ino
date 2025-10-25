@@ -30,10 +30,9 @@
 
 
 //---------ESTADOS-----------
-#define ESTADO_1_STANDBY 1
-#define ESTADO_2_VUELO 2
-#define ESTADO_3_DESCENSO 3
-#define ESTADO_4_RECOVERY 4
+#define ESTADO_1_STANDBY_VUELO 1
+#define ESTADO_2_DESCENSO_ATERRIZAJE 2
+#define ESTADO_3_RECOVERY 3
 
 
 
@@ -165,8 +164,8 @@ float voltaje = 0;
   }
 
   // ---------------------- CALIBRACIÓN ----------------------
-  void PresionInicial() { //Calculo de Presión Inicial
-    if (!bmeOK) return;
+  float PresionInicial() { //Calculo de Presión Inicial
+    if (!bmeOK) return 0.0;
 
     Serial.println("Calibrando presión inicial...");
     float sumaPresiones = 0;
@@ -253,13 +252,65 @@ float voltaje = 0;
            
             Serial.print("Apogeo detectado: "); Serial.println(altitudMax); Serial.println(" [m]");
             
-            digitalWrite(PIN_RECUPERACION, LOW);  // Activar sistema de recuperación
+            digitalWrite(PIN_RECUPERACION1, LOW);
+            digitalWrite(PIN_RECUPERACION2, LOW);  // Activar sistema de recuperación
+            
             Serial.println("Sistema de recuperación activado");
 
             delay(2000);  // LED encendido (similación de carga pirotécnica)
-            digitalWrite(PIN_RECUPERACION, HIGH);
+            digitalWrite(PIN_RECUPERACION1, HIGH);
+            digitalWrite(PIN_RECUPERACION2, HIGH);
         }
   }
+
+  //------------------ATERRIZAJE----------------
+  bool confirmarAterrizaje(float altitudActual, float aceleracionTotal, float altitudInicial){
+     // Aceleración cercana a la gravedad
+    bool aceleracionEstable = (aceleracionTotal > 9.3 && aceleracionTotal < 10.2);
+    
+    // Altitud cercana a la del inicio
+    bool altitudCercana = fabs(altitudActual - altitudInicial) < 3.0;
+
+    if (aceleracionEstable && altitudCercana) {
+    Serial.println("Cohete ha aterrizado");
+    Serial.print("Altitud final: "); Serial.println(altitudActual);
+    Serial.print("Aceleración final: "); Serial.println(aceleracionTotal);
+    return true;
+    }
+      return false;
+  }
+
+//------------------RECUPERACIÓN------
+  void procesoRecuperacion() {
+    Serial.println("Proceso de recuperación...");
+
+    float headingDeg;
+    const char* cardinal;
+    calculaOrientacion(headingDeg, cardinal);
+    Telemetria(altitudActual, headingDeg, cardinal);
+
+    // Señal visual o sonora para localizar el cohete
+    for (int i = 0; i < 5; i++) {
+      digitalWrite(SIGN_LED, HIGH);
+      delay(200);
+      digitalWrite(SIGN_LED, LOW);
+      delay(200);
+    }
+
+    // Puedes incluir aquí la última escritura a SD
+    if (cardOK && SD.exists(filename)) {
+      registro = SD.open(filename, FILE_WRITE);
+      if (registro) {
+        registro.println("---- Fin del vuelo ----");
+        Telemetria(altitudActual, headingDeg, cardinal);
+        Serial.println("Datos finales");
+      registro.close();
+      }
+    }
+
+    Serial.println("Cohete en recuperación... fin del registro de datos");
+  }
+
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
@@ -281,43 +332,9 @@ void Telemetria(float altitudActual, float headingDeg, const char* cardinal) {
     Serial.print("Voltaje celda1: "); Serial.print(voltaje_c1); Serial.println(" [V]");
     Serial.print("Voltaje celda2: "); Serial.print(voltaje_c2); Serial.println(" [V]");
     Serial.print("Voltaje bateria: "); Serial.print(bateria); Serial.println(" [V]");
-    return voltaje;
+    
+    return bateria;
   }
-
-//---------------GESTION DE ESTADO-----------------
-void gestionEstados(unsigned long tiempoActual){
-
-  switch (numestado){
-
-    case ESTADO_1_STANDBY:
-    intervaloDeMuestreo = 100; // Work In Progress (WIP)
-
-    //TRANSICIÓN: Aqui la idea es que la variable que detone al cambio de estado sea
-    // la aceleración: una aceleración abrupta (lo que indicaría que ya se lanzó el cohete)
-    break;
-
-    case ESTADO_2_VUELO:
-    intervaloDeMuestreo = 10;
-
-
-  
-    //TRANSICIÓN: Aqui la idea es que la variable que detone al cambio de estado sea
-    // EL APOGEO: 
-    break;
-
-    case ESTADO_3_DESCENSO:
-
-
-    break;
-
-    case ESTADO_4_RECOVERY:
-
-
-    break;
-  }
-
-
-}
 
 
 void setup() {
@@ -380,10 +397,64 @@ void setup() {
 void loop() {
   
   unsigned long tiempoActual = millis(); // Quiero limitar la tasa de muestreo para ciertos Estados:
-                                        // En el Standby: limitar a 10Hz para ahorrar batería. Pero
-                                        // Esto quedaría en WIP.
+  gestionEstados(tiempoActual);
+}
 
-  //AQUÍ DEBERÍA ESTAR LA FUNCIÓN gestionEstado();
+//---------------GESTIÓN DE ESTADOS------
+void gestionEstados(unsigned long tiempoActual) {
+    static unsigned long tiempoAnterior = 0;
 
-  //AQUÍ PONER LAS FUNCIONES QUE ESCRIBAN LOS DATOS EN LA SD Y QUE CALCULEN LA ALTITUD Y VELOCIDAD.
+    if (tiempoActual - tiempoAnterior < intervaloDeMuestreo) return;
+    tiempoAnterior = tiempoActual;
+
+  //Lectura Sensores
+    float ax, ay, az;
+    float headingDeg;
+    const char* cardinal;
+    float aceleracionTotal = leerAceleracion(ax, ay, az);
+    float altitud = calcularAltitud();
+    calculaOrientacion(headingDeg, cardinal);
+
+  switch (numestado) {
+
+    //-------------- ESTADO 1---------
+    case ESTADO_1_STANDBY_VUELO:
+        intervaloDeMuestreo = 50;  
+      Telemetria(altitud, headingDeg, cardinal);
+      voltajeBateria();
+
+      //Detectar lanzamiento
+       if (aceleracionTotal > 12.0 && altitud > altitudInicial + 1.0) {
+        Serial.println("Lanzamiento detectado");
+      }
+
+      // Detectar apogeo
+      confirmarApogeo(altitudActual, aceleracionTotal);
+      
+        if (apogeoDetectado) {
+          numestado = ESTADO_2_DESCENSO_ATERIZAJE;
+          Serial.println("Transición a descenso");
+        }
+    break;  
+
+      // ======== ESTADO 2: DESCENSO ========
+    case ESTADO_2_DESCENSO_ATERRIZAJE:
+        intervaloDeMuestreo = 100;
+      Telemetria(altitud, headingDeg, cardinal);
+      voltajeBateria();      
+
+      //Confirmar Aterrizaje
+      if (confirmarAterrizaje(altitud, aceleracionTotal, altitudInicial)) {
+        Serial.println("Transición a estado de recuperación");
+        numestado = ESTADO_3_RECOVERY;
+      }
+    break;
+
+    case ESTADO_3_RECOVERY:
+        intervaloDeMuestreo = 1000;
+      voltajeBateria();
+      procesoRecuperacion();
+
+    break;
+  }
 }
