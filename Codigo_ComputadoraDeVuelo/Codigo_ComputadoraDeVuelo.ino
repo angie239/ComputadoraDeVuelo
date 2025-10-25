@@ -1,7 +1,7 @@
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_HMC5883_U.h>
-#include <Adafruit_BMP085.h>
+// #include <Adafruit_BMP085.h> no se va usar; se usa el BME
 #include <Adafruit_BME280.h>
 #include <Adafruit_MPU6050.h>
 #include <SPI.h>
@@ -19,6 +19,11 @@
 #define SIGN_LED // LED para las señales
 #define PIN_RECUPERACION //Sistema de Recuperación
 #define PIN_BATERIA
+
+// Pines del GY-87 
+#define GY_SCL   //faltan pines
+#define GY_SDA    
+
 
 //---------ESTADOS-----------
 #define ESTADO_1_STANDBY 1
@@ -315,6 +320,8 @@ void setup() {
   //Inicialización de LED y Buzzer
   pinMode(SIGN_LED, OUTPUT); //LED neopixel?
   pinMode(PIN_RECUPERACION, OUTPUT);
+  digitalWrite(SIGN_LED, LOW); // asegurando que no esten activados
+  digitalWrite(PIN_RECUPERACION, LOW);
 
   // ESTADO 0 Inicialización de sensores
 
@@ -354,8 +361,8 @@ void setup() {
     altitudInicial = 44330.0 * (1.0 - pow(presionInicial / 101325.0, 1.0 / 5.255));
     Serial.print("Altitud inicial: ");
     Serial.println(altitudInicial);
-    }
-      
+    }  
+
 }
 
 
