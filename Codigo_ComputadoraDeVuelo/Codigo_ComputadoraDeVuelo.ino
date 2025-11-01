@@ -50,7 +50,6 @@ bool magOK = false;
 bool cardOK = false;
 bool fileOK = false;
 
-bool Apogeo = false;
 bool apogeoDetectado = false;
 bool recuperacion = false;
 
@@ -223,11 +222,13 @@ float voltaje = 0;
 
     float presionActual = bme.readPressure();  // Lectura de presión actual
       float ratio = presionActual / presionInicial;
-      altitudActual = 44330.0 * (1.0 - pow(ratio, 1.0 / 5.255)); //Calculo de altitudActual 
+      altitud = 44330.0 * (1.0 - pow(ratio, 1.0 / 5.255)); //Calculo de altitud en ese instante 
 
-      if (altitudActual > altitudMax){
-        altitudMax = altitudActual; //actualización de altitud
+      if (altitud > altitudMax){
+        altitudMax = altitud; //actualización de altitud
+        
       } 
+        altitudActual = altitud;
         return altitudActual;
   }
 
@@ -242,36 +243,33 @@ float voltaje = 0;
 }
 
 //---------APOGEO-------------
-  void confirmarApogeo(float altitudActual, float aceleracionTotal){  //Detección de apogeo 
+  void confirmarApogeo(float altitudActual){  //Detección de apogeo 
 
     //Condiciones para confirmar Apogeo
-    //Confirmación con aceleración y altitud
-    if (!apogeoDetectado && altitudActual < altitudMax &&
-        aceleracionTotal > 9  &&  aceleracionTotal < 10.5){ ///falta perfeccionar la calibración de rango
+    //Confirmación con altitud
+    if (!apogeoDetectado && altitudActual < altitudMax ){ ///falta perfeccionar la calibración de rango
           apogeoDetectado = true; 
            
             Serial.print("Apogeo detectado: "); Serial.println(altitudMax); Serial.println(" [m]");
             
             digitalWrite(PIN_RECUPERACION1, LOW);
-            digitalWrite(PIN_RECUPERACION2, LOW);  // Activar sistema de recuperación
-            
-            Serial.println("Sistema de recuperación activado");
+            digitalWrite(PIN_RECUPERACION2, LOW);  
+            delay(50); 
 
-            delay(2000);  // LED encendido (similación de carga pirotécnica)
-            digitalWrite(PIN_RECUPERACION1, HIGH);
-            digitalWrite(PIN_RECUPERACION2, HIGH);
+            Serial.println("Sistema de recuperación activado");
+            digitalWrite(PIN_RECUPERACION1, HIGH); // Activar sistema de recuperación
+            digitalWrite(PIN_RECUPERACION2, HIGH); // LED encendido (similación de carga pirotécnica)
         }
   }
-
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   //------------------ATERRIZAJE----------------
-  bool confirmarAterrizaje(float altitudActual, float aceleracionTotal, float altitudInicial){
+  bool confirmarAterrizaje(float altitudActual, float altitudInicial){
      // Aceleración cercana a la gravedad
-    bool aceleracionEstable = (aceleracionTotal > 9.3 && aceleracionTotal < 10.2);
     
     // Altitud cercana a la del inicio
-    bool altitudCercana = fabs(altitudActual - altitudInicial) < 3.0;
+    bool altitudCercana = fabs(altitudActual - altitudInicial) < 8.0; //calibración en base a data sheet, podría mejorarse con pruebas
 
-    if (aceleracionEstable && altitudCercana) {
+    if (altitudCercana) {
     Serial.println("Cohete ha aterrizado");
     Serial.print("Altitud final: "); Serial.println(altitudActual);
     Serial.print("Aceleración final: "); Serial.println(aceleracionTotal);
@@ -314,7 +312,7 @@ float voltaje = 0;
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
- //--------TELEMETRÍA    
+ //--------Recopilación de Datos    
 void Telemetria(float altitudActual, float headingDeg, const char* cardinal) {
   Serial.print("Altitud: "); Serial.print(altitudActual);
   Serial.print(" [m] | Max: "); Serial.print(altitudMax); 
@@ -429,22 +427,22 @@ void gestionEstados(unsigned long tiempoActual) {
       }
 
       // Detectar apogeo
-      confirmarApogeo(altitudActual, aceleracionTotal);
+      confirmarApogeo(altitudActual);
       
         if (apogeoDetectado) {
-          numestado = ESTADO_2_DESCENSO_ATERIZAJE;
+          numestado = ESTADO_2_DESCENSO_ATERRIZAJE;
           Serial.println("Transición a descenso");
         }
     break;  
 
-      // ======== ESTADO 2: DESCENSO ========
+      //-------ESTADO 2: DESCENSO-------------
     case ESTADO_2_DESCENSO_ATERRIZAJE:
         intervaloDeMuestreo = 100;
       Telemetria(altitud, headingDeg, cardinal);
       voltajeBateria();      
 
       //Confirmar Aterrizaje
-      if (confirmarAterrizaje(altitud, aceleracionTotal, altitudInicial)) {
+      if (confirmarAterrizaje(altitud, altitudInicial)) {
         Serial.println("Transición a estado de recuperación");
         numestado = ESTADO_3_RECOVERY;
       }
