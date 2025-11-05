@@ -96,7 +96,7 @@ float voltaje = 0;
     Serial.println("Inicializando BME...");
     int reintentos = 0;
     while (reintentos < 3) {
-      if (bme.begin(0x76)) {
+      if (bme.begin(0x77)) {
         Serial.println("BME inicializado");
         return true;
       }
