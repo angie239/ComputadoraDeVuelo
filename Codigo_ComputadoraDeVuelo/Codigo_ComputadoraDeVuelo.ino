@@ -69,6 +69,7 @@ float altitudMax = 0;
 float altitudActual = 0;
 float altitudInicial = 0;
 float presionInicial = 0;
+float aceleracionTotal = 0;
 
 float voltaje = 0;
 
@@ -222,7 +223,7 @@ float voltaje = 0;
 
     float presionActual = bme.readPressure();  // Lectura de presión actual
       float ratio = presionActual / presionInicial;
-      altitud = 44330.0 * (1.0 - pow(ratio, 1.0 / 5.255)); //Calculo de altitud en ese instante 
+      float altitud = 44330.0 * (1.0 - pow(ratio, 1.0 / 5.255)); //Calculo de altitud en ese instante 
 
       if (altitud > altitudMax){
         altitudMax = altitud; //actualización de altitud
@@ -239,7 +240,7 @@ float voltaje = 0;
     ax = aEvent.acceleration.x;
     ay = aEvent.acceleration.y;
     az = aEvent.acceleration.z;
-    return sqrt(ax*ax + ay*ay + az*az);
+    return aceleracionTotal = sqrt(ax*ax + ay*ay + az*az);
 }
 
 //---------APOGEO-------------
@@ -285,7 +286,7 @@ float voltaje = 0;
     float headingDeg;
     const char* cardinal;
     calculaOrientacion(headingDeg, cardinal);
-    Telemetria(altitudActual, headingDeg, cardinal);
+    Datos(altitudActual, headingDeg, cardinal);
 
     // Señal visual o sonora para localizar el cohete
     for (int i = 0; i < 5; i++) {
@@ -300,7 +301,7 @@ float voltaje = 0;
       registro = SD.open(filename, FILE_WRITE);
       if (registro) {
         registro.println("---- Fin del vuelo ----");
-        Telemetria(altitudActual, headingDeg, cardinal);
+        Datos(altitudActual, headingDeg, cardinal);
         Serial.println("Datos finales");
       registro.close();
       }
@@ -313,7 +314,7 @@ float voltaje = 0;
 /////////////////////////////////////////////////////////////////////////////////////////
 
  //--------Recopilación de Datos    
-void Telemetria(float altitudActual, float headingDeg, const char* cardinal) {
+void Datos(float altitudActual, float headingDeg, const char* cardinal) {
   Serial.print("Altitud: "); Serial.print(altitudActual);
   Serial.print(" [m] | Max: "); Serial.print(altitudMax); 
   Serial.print(" [m] | Heading: "); Serial.print(headingDeg);
@@ -418,7 +419,7 @@ void gestionEstados(unsigned long tiempoActual) {
     //-------------- ESTADO 1---------
     case ESTADO_1_STANDBY_VUELO:
         intervaloDeMuestreo = 50;  
-      Telemetria(altitud, headingDeg, cardinal);
+      Datos(altitud, headingDeg, cardinal);
       voltajeBateria();
 
       //Detectar lanzamiento
@@ -438,7 +439,7 @@ void gestionEstados(unsigned long tiempoActual) {
       //-------ESTADO 2: DESCENSO-------------
     case ESTADO_2_DESCENSO_ATERRIZAJE:
         intervaloDeMuestreo = 100;
-      Telemetria(altitud, headingDeg, cardinal);
+      Datos(altitud, headingDeg, cardinal);
       voltajeBateria();      
 
       //Confirmar Aterrizaje
