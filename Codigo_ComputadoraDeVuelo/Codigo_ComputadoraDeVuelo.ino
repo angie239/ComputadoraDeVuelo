@@ -9,12 +9,12 @@
 #include <stdio.h>
 
 //------------------SPI--------------------
-#define SCK   2 
-#define MISO  8
-#define MOSI  7
-#define SD_CS 5  // SD por SPI
+#define SCK   3 
+#define MISO  2
+#define MOSI  18
+#define SD_CS 17  // SD por SPI
 
-#define SIGN_LED 22 // LED para las señales
+#define SIGN_LED 40 // LED para las señales
 #define BUZZER 23
 
 //-------- Sistema de Recuperación ------
@@ -25,15 +25,14 @@
 #define PIN_BATERIA2 27
 
 // --------------- I2C ------------------ 
-#define GY_SCL   1
-#define GY_SDA   0 
+#define GY_SCL   10
+#define GY_SDA   11
 
 
 //---------ESTADOS-----------
 #define ESTADO_1_STANDBY_VUELO 1
 #define ESTADO_2_DESCENSO_ATERRIZAJE 2
 #define ESTADO_3_RECOVERY 3
-
 
 
 //-----------------MISCELANEO --------
