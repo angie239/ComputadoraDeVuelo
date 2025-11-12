@@ -338,14 +338,11 @@ void setup() {
   Serial.begin(115200);
 
  /*Inicializa I2C*/ 
-  Wire.setSDA(GY_SDA);
-  Wire.setSCL(GY_SCL);
-  Wire.begin();
+  Wire.begin(GY_SDA, GY_SCL);
 
-  SPI.setMISO(MISO); 
-  SPI.setMOSI(MOSI); 
-  SPI.setSCK(SCK);
-  SPI.begin();
+
+  SPI.begin(SCK, MISO, MOSI);
+  
 
   //Inicialización de LED y Buzzer
   pinMode(SIGN_LED, OUTPUT); //LED neopixel?
