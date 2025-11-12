@@ -343,6 +343,9 @@ void setup() {
   Wire.setSCL(GY_SCL);
   Wire.begin();
 
+  SPI.setRX(MISO); 
+  SPI.setTX(MOSI); 
+  SPI.setSCK(SCK);
   SPI.begin();
 
   //Inicialización de LED y Buzzer
