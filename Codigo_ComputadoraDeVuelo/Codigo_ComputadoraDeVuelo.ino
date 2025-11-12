@@ -185,7 +185,7 @@ float voltaje = 0;
   void calculaOrientacion(float &headingDegrees, const char* &cardinal) { //Calibración magnetómetro
     if (!magOK) return;
 
-    Serial.println("Calibrando magnetómetro...");
+ //   Serial.println("Calibrando magnetómetro...");
   
     sensors_event_t event;
     mag.getEvent(&event);
@@ -255,7 +255,6 @@ float voltaje = 0;
             
             digitalWrite(PIN_RECUPERACION1, LOW);
             digitalWrite(PIN_RECUPERACION2, LOW);  
-            delay(50); 
 
             Serial.println("Sistema de recuperación activado");
             digitalWrite(PIN_RECUPERACION1, HIGH); // Activar sistema de recuperación
@@ -338,7 +337,12 @@ void Datos(float altitudActual, float headingDeg, const char* cardinal) {
 
 void setup() {
   Serial.begin(115200);
+
+ /*Inicializa I2C*/ 
+  Wire.setSDA(GY_SDA);
+  Wire.setSCL(GY_SCL);
   Wire.begin();
+
   SPI.begin();
 
   //Inicialización de LED y Buzzer
