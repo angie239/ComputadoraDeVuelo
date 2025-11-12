@@ -343,8 +343,8 @@ void setup() {
   Wire.setSCL(GY_SCL);
   Wire.begin();
 
-  SPI.setRX(MISO); 
-  SPI.setTX(MOSI); 
+  SPI.setMISO(MISO); 
+  SPI.setMOSI(MOSI); 
   SPI.setSCK(SCK);
   SPI.begin();
 
@@ -417,7 +417,7 @@ void gestionEstados(unsigned long tiempoActual) {
     float ax, ay, az;
     float headingDeg;
     const char* cardinal;
-    float aceleracionTotal = leerAceleracion(ax, ay, az);
+    aceleracionTotal = leerAceleracion(ax, ay, az);
     float altitud = calcularAltitud();
     calculaOrientacion(headingDeg, cardinal);
 
