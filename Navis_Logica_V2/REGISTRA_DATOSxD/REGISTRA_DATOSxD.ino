@@ -13,9 +13,9 @@
 #define SCK   36   // FSPICLK
 #define MISO  37   // FSPIQ
 #define MOSI  35   // FSPID
-#define SD_CS 10   // CS libre y cómodo
+#define SD_CS 11   // CS 
 
-#define SIGN_LED 4 // LED de señal (libre)
+#define SIGN_LED 4 // LED de señal 
 #define BUZZER 14  // Buzzer (libre, no USB/JTAG)
 
 //-------- Botón de finalización de vuelo ------
@@ -170,7 +170,7 @@ bool inicializarSD() { //--------SDCard(memoria)
   delay(5);
 
   // SPI ya configurado en setup con tus pines
-  const uint32_t FREQ1 = 4000000;   // 4 MHz (conservador)
+  const uint32_t FREQ1 = 4000000;   // 4 MHz
   const uint32_t FREQ2 = 10000000;  // 10 MHz
 
   if (!SD.begin(SD_CS, SPI, FREQ1)) {
@@ -186,7 +186,7 @@ bool inicializarSD() { //--------SDCard(memoria)
 }
 
 //-------------------------CREACIÓN DE ARCHIVO DE VUELO-----------
-// Arquitectura robusta: crea, abre global `registro`, escribe encabezado y mantiene abierto.
+//crea, abre registro, escribe encabezado y mantiene abierto.
 bool nuevoArchivo() {
   if (!cardOK) {
     Serial.println("No hay tarjeta SD inicializada.");
