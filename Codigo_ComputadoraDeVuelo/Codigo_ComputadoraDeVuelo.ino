@@ -7,7 +7,7 @@
 #include <SPI.h>
 #include <SD.h>
 #include <stdio.h>
-aaaaaaaaaaaaaaaaa
+
 //------------------SPI--------------------
 #define SCK   3 
 #define MISO  2

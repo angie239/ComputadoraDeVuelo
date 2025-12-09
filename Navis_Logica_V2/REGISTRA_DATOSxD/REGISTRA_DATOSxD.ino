@@ -1,7 +1,6 @@
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_HMC5883_U.h>
-// #include <Adafruit_BMP085.h> no se va usar; se usa el BME
 #include <Adafruit_BME280.h>
 #include <Adafruit_MPU6050.h>
 #include <SPI.h>
@@ -10,27 +9,27 @@
 #include <math.h>
 
 //------------------SPI (ESP32-S3 FSPI)--------------------
-#define SCK   36   // FSPICLK
-#define MISO  37   // FSPIQ
-#define MOSI  35   // FSPID
-#define SD_CS 11   // CS 
+#define SCK   36 
+#define MISO  37 
+#define MOSI  35  
+#define SD_CS 11   
 
-#define SIGN_LED 4 // LED de señal 
-#define BUZZER 14  // Buzzer (libre, no USB/JTAG)
+#define SIGN_LED 5  // LED de señal 1
+#define NEOPX    4  // Neopixel status
+#define BUZZER 14   // Buzzer 
 
 //-------- Botón de finalización de vuelo ------
-#define BUTTON_PIN 20   // Botón para terminar loop y cerrar archivo
+#define BUTTON_PIN 20   
 
 //-------- Sistema de Recuperación ------
 #define PIN_RECUPERACION1 21 
 #define PIN_RECUPERACION2 22
 
-#define PIN_BATERIA1 26
-#define PIN_BATERIA2 27
+#define PIN_BATERIA 16
 
 // --------------- I2C ------------------ 
-#define GY_SDA   41    // SDA 
-#define GY_SCL   42    // SCL
+#define GY_SDA   2    // SDA 
+#define GY_SCL   1    // SCL
 
 //---------ESTADOS-----------
 #define ESTADO_1_STANDBY_VUELO      1
@@ -57,8 +56,6 @@ bool recuperacion    = false;
 
 int numestado = 0;
 
-#define FREQ_STANDBY_HZ   20.0   // parpadeo rápido en STANDBY
-#define FREQ_RECOVERY_HZ  1.0    // parpadeo lento en RECOVERY
 
 unsigned long _led_last_toggle   = 0;
 unsigned long _led_half_period_ms = 0;  // medio período del parpadeo
@@ -87,7 +84,101 @@ void logFila(float altitud, float headingDeg, const char* cardinal,
 void Datos(float altitudActual, float headingDeg, const char* cardinal);
 void setBlinkHz(float hz);
 void updateBlink();
-void enableMpu6050Bypass(); // <--- PROTOTIPO AGREGADO
+void enableMpu6050Bypass(); 
+
+void setup() {
+  unsigned long t_init0 = millis();
+  Serial.begin(115200);
+
+  /* Inicializa I2C (ESP32-S3) */ 
+  Wire.begin(GY_SDA, GY_SCL, 400000);
+
+  /* Inicializa SPI (ESP32-S3) */
+  SPI.begin(SCK, MISO, MOSI);
+
+  //Inicialización de LED y Buzzer
+  pinMode(SIGN_LED, OUTPUT);
+  pinMode(BUZZER,   OUTPUT);
+  pinMode(PIN_RECUPERACION1, OUTPUT);
+  pinMode(PIN_RECUPERACION2, OUTPUT);
+  digitalWrite(SIGN_LED, LOW);
+  digitalWrite(BUZZER,   LOW);
+  digitalWrite(PIN_RECUPERACION1, HIGH);
+  digitalWrite(PIN_RECUPERACION2, HIGH);
+
+  // Botón para terminar loop y guardar archivo
+  pinMode(BUTTON_PIN, INPUT_PULLUP); 
+  
+  //inicializamos MPU
+  mpuOK = inicializarMPU();
+
+  
+  // inicializamos el HMC
+  enableMpu6050Bypass();
+  magOK = inicializarHMC();
+  
+  bmeOK = inicializarBME();
+  cardOK = inicializarSD();
+  fileOK = cardOK ? nuevoArchivo() : false;
+
+  bool todoOK = mpuOK && magOK && bmeOK && cardOK && fileOK;
+
+  // TRANSICIÓN ESTADO 0 -> ESTADO 1
+  if (!todoOK) {
+    Serial.println("No se han inicializado todos los sensores! No se pasará a la siguiente fase.");
+  } else {
+    Serial.println("Todos los sistemas inicializados. Se pasará a Standby");
+  }
+
+  PresionInicial(); //Calibrando Presión Inicial
+
+  if (!bmeOK) {
+    Serial.println("Error al iniciar BME280");
+  } else {
+    altitudInicial = 44330.0f * (1.0f - pow(presionInicial / 101325.0f, 1.0f / 5.255f));
+    Serial.print("Altitud inicial: ");
+    Serial.println(altitudInicial);
+  }  
+
+  unsigned long t_init1 = millis();
+  unsigned long t_init  = t_init1 - t_init0;
+  Serial.print("El tiempo de inicialización es : ");
+  Serial.println(t_init);
+}
+
+void loop() {
+  static bool stopRequested = false;
+  static int  lastButtonState = HIGH;
+
+  // Lectura del botón (activo en LOW)
+  int buttonState = digitalRead(BUTTON_PIN);
+
+  if (!stopRequested && (lastButtonState == HIGH) && (buttonState == LOW)) {
+    // Flanco de bajada: se presionó el botón
+    Serial.println("Botón presionado: cerrando archivo y deteniendo ejecución.");
+    if (fileOK && registro) {
+      registro.flush();
+      registro.close();
+      fileOK = false;
+      Serial.println("Archivo CSV cerrado de forma segura.");
+    }
+    stopRequested = true;
+  }
+  lastButtonState = buttonState;
+
+  if (stopRequested) {
+    // Sistema detenido, solo parpadeo para indicar fin
+    updateBlink();
+    delay(10);
+    return;
+  }
+
+  unsigned long tiempo_actual = millis();
+  gestionEstados(tiempo_actual);
+}
+
+
+
 
 // ------------------ INICIALIZACION SENSORES
 
@@ -144,22 +235,6 @@ bool inicializarHMC() { //--------HMC(magnetómetro)
   return false;
 }
 
-// ---- Debug SD
-void debugSD() {
-  uint8_t type = SD.cardType();
-  Serial.print("Tipo de tarjeta: ");
-  if (type == CARD_NONE)      Serial.println("NINGUNA");
-  else if (type == CARD_MMC)  Serial.println("MMC");
-  else if (type == CARD_SD)   Serial.println("SDSC");
-  else if (type == CARD_SDHC) Serial.println("SDHC/SDXC");
-  else                        Serial.println("Desconocida");
-
-  uint64_t sizeMB = SD.cardSize() / (1024ULL * 1024ULL);
-  Serial.print("Tam.: ");
-  Serial.print(sizeMB);
-  Serial.println(" MB");
-}
-
 bool inicializarSD() { //--------SDCard(memoria)
   Serial.println("Inicializando Tarjeta SD...");
 
@@ -183,9 +258,23 @@ bool inicializarSD() { //--------SDCard(memoria)
   debugSD();
   return true;
 }
+// ---- Debug SD
+void debugSD() {
+  uint8_t type = SD.cardType();
+  Serial.print("Tipo de tarjeta: ");
+  if (type == CARD_NONE)      Serial.println("NINGUNA");
+  else if (type == CARD_MMC)  Serial.println("MMC");
+  else if (type == CARD_SD)   Serial.println("SDSC");
+  else if (type == CARD_SDHC) Serial.println("SDHC/SDXC");
+  else                        Serial.println("Desconocida");
+
+  uint64_t sizeMB = SD.cardSize() / (1024ULL * 1024ULL);
+  Serial.print("Tam.: ");
+  Serial.print(sizeMB);
+  Serial.println(" MB");
+}
 
 //-------------------------CREACIÓN DE ARCHIVO DE VUELO-----------
-//crea, abre registro, escribe encabezado y mantiene abierto.
 bool nuevoArchivo() {
   if (!cardOK) {
     Serial.println("No hay tarjeta SD inicializada.");
@@ -243,8 +332,6 @@ float PresionInicial() { //Calculo de Presión Inicial
   Serial.println(" [Pa]");
   return presionInicial;
 }
-
-////////////////////////////////////////////////
 
 void calculaOrientacion(float &headingDegrees, const char* &cardinal) { //Calibración magnetómetro
   if (!magOK) return;
@@ -320,7 +407,6 @@ void confirmarApogeo(float altitudActual){  //Detección de apogeo
     digitalWrite(PIN_RECUPERACION2, HIGH); // LED encendido (simulación de carga pirotécnica)
   }
 }
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //------------------ATERRIZAJE----------------
 bool confirmarAterrizaje(float altitudActual, float altitudInicial){
   bool altitudCercana = fabs(altitudActual - altitudInicial) < 8.0;
@@ -349,14 +435,6 @@ void procesoRecuperacion() {
   calculaOrientacion(headingDeg, cardinal);
   Datos(altitudActual, headingDeg, cardinal);
 
-  // Señal visual o sonora para localizar el cohete
-  for (int i = 0; i < 5; i++) {
-    digitalWrite(SIGN_LED, HIGH);
-    delay(200);
-    digitalWrite(SIGN_LED, LOW);
-    delay(200);
-  }
-
   // Última escritura a SD
   if (cardOK && fileOK && registro) {
     registro.println("---- Fin del vuelo ----");
@@ -383,23 +461,14 @@ void Datos(float altitudActual, float headingDeg, const char* cardinal) {
 
 // ---------------- NIVEL BATERIA ----
 float voltajeBateria() {
-  int lectura_c1 = analogRead(PIN_BATERIA1);
-  int lectura_c2 = analogRead(PIN_BATERIA2); // Leer valor ADC
-  float voltaje_c1 = (lectura_c1 * 3.3f / 4095.0f) * (138.0f / 91.0f); // Divisor
-  float voltaje_c2 = (lectura_c2 * 3.3f / 4095.0f) * (138.0f / 91.0f); 
-  float bateria    = voltaje_c2 + voltaje_c1;
+  int lectura = analogRead(PIN_BATERIA);
+  float voltaje = (lectura * 3.3f / 4095.0f) * (3); // Divisor
 
-  Serial.print("Voltaje celda1: ");
-  Serial.print(voltaje_c1);
-  Serial.println(" [V]");
-  Serial.print("Voltaje celda2: ");
-  Serial.print(voltaje_c2);
-  Serial.println(" [V]");
   Serial.print("Voltaje bateria: ");
-  Serial.print(bateria);
+  Serial.print(voltaje);
   Serial.println(" [V]");
     
-  return bateria;
+  return voltaje;
 }
 
 // ---------- Escribir una fila en el CSV ----------
@@ -423,153 +492,8 @@ void logFila(float altitud, float headingDeg, const char* cardinal,
   }
 }
 
-// ---------- Parpadeo LED ----------
-void setBlinkHz(float hz) {
-  if (hz <= 0.0f) {
-    _led_half_period_ms = 0;
-    digitalWrite(SIGN_LED, LOW);
-    _led_state = false;
-    return;
-  }
-  _led_half_period_ms = (unsigned long)(1000.0f / (2.0f * hz)); // medio periodo
-  _led_last_toggle = millis();
-}
-
-void updateBlink() {
-  if (_led_half_period_ms == 0) return; // desactivado
-  unsigned long now = millis();
-  if (now - _led_last_toggle >= _led_half_period_ms) {
-    _led_last_toggle = now;
-    _led_state = !_led_state;
-    digitalWrite(SIGN_LED, _led_state ? HIGH : LOW);
-  }
-}
-
-void onEnterState(int st) {
-  switch (st) {
-    case ESTADO_1_STANDBY_VUELO:
-      setBlinkHz(FREQ_STANDBY_HZ);   // parpadeo rápido
-      break;
-    case ESTADO_2_DESCENSO_ATERRIZAJE:
-      // podrías poner otra frecuencia si lo deseas
-      // setBlinkHz(2.0);
-      break;
-    case ESTADO_3_RECOVERY:
-      setBlinkHz(FREQ_RECOVERY_HZ);  // parpadeo lento
-      break;
-  }
-}
-
-void setup() {
-  unsigned long t_init0 = millis();
-  Serial.begin(115200);
-
-  /* Inicializa I2C (ESP32-S3) */ 
-  Wire.begin(GY_SDA, GY_SCL, 400000);
-
-  /* Inicializa SPI (ESP32-S3) */
-  SPI.begin(SCK, MISO, MOSI);
-
-  //Inicialización de LED y Buzzer
-  pinMode(SIGN_LED, OUTPUT);
-  pinMode(BUZZER,   OUTPUT);
-  pinMode(PIN_RECUPERACION1, OUTPUT);
-  pinMode(PIN_RECUPERACION2, OUTPUT);
-  digitalWrite(SIGN_LED, LOW);
-  digitalWrite(BUZZER,   LOW);
-  digitalWrite(PIN_RECUPERACION1, HIGH);
-  digitalWrite(PIN_RECUPERACION2, HIGH);
-
-  // Botón para terminar loop y guardar archivo
-  pinMode(BUTTON_PIN, INPUT_PULLUP); // botón a GND
-
-  // ESTADO 0 Inicialización de sensores
-  
-  // 1. PRIMERO inicializamos MPU
-  mpuOK = inicializarMPU();
-  
-  // 2. ¡CRUCIAL! Activamos el BYPASS justo aquí para que la brújula sea visible
-  enableMpu6050Bypass();
-  
-  // 3. AHORA SÍ inicializamos el HMC
-  magOK = inicializarHMC();
-  
-  bmeOK = inicializarBME();
-
-  // SD al final (con SPI ya listo)
-  cardOK = inicializarSD();
-  fileOK = cardOK ? nuevoArchivo() : false;
-
-  bool todoOK = mpuOK && magOK && bmeOK && cardOK && fileOK;
-
-  // TRANSICIÓN ESTADO 0 -> ESTADO 1
-  if (!todoOK) {
-    Serial.println("No se han inicializado todos los sensores! No se pasará a la siguiente fase.");
-    for (int i = 0 ; i < 5 ; i++) { //Señal de ERROR
-      digitalWrite(SIGN_LED, HIGH);
-      delay(100);
-      digitalWrite(SIGN_LED, LOW);
-      delay(100);
-    }
-  } else {
-    Serial.println("Todos los sistemas inicializados. Se pasará a Standby");
-    digitalWrite(SIGN_LED, HIGH);
-    delay(500);
-    digitalWrite(SIGN_LED, LOW);
-    numestado = ESTADO_1_STANDBY_VUELO;
-    onEnterState(numestado);
-  }
-
-  PresionInicial(); //Calibrando Presión Inicial
-
-  if (!bmeOK) {
-    Serial.println("Error al iniciar BME280");
-  } else {
-    altitudInicial = 44330.0f * (1.0f - pow(presionInicial / 101325.0f, 1.0f / 5.255f));
-    Serial.print("Altitud inicial: ");
-    Serial.println(altitudInicial);
-  }  
-
-  unsigned long t_init1 = millis();
-  unsigned long t_init  = t_init1 - t_init0;
-  Serial.print("El tiempo de inicialización es : ");
-  Serial.println(t_init);
-}
-
-void loop() {
-  static bool stopRequested = false;
-  static int  lastButtonState = HIGH;
-
-  // Lectura del botón (activo en LOW)
-  int buttonState = digitalRead(BUTTON_PIN);
-  if (!stopRequested && (lastButtonState == HIGH) && (buttonState == LOW)) {
-    // Flanco de bajada: se presionó el botón
-    Serial.println("Botón presionado: cerrando archivo y deteniendo ejecución.");
-    if (fileOK && registro) {
-      registro.flush();
-      registro.close();
-      fileOK = false;
-      Serial.println("Archivo CSV cerrado de forma segura.");
-    }
-    stopRequested = true;
-    setBlinkHz(FREQ_RECOVERY_HZ); // parpadeo lento indicando fin
-  }
-  lastButtonState = buttonState;
-
-  if (stopRequested) {
-    // Sistema detenido, solo parpadeo para indicar fin
-    updateBlink();
-    delay(10);
-    return;
-  }
-
-  unsigned long tiempo_actual = millis();
-  gestionEstados(tiempo_actual);
-}
-
 //---------------GESTIÓN DE ESTADOS------
 void gestionEstados(unsigned long tiempoActual) {
-  updateBlink();
   static unsigned long tiempoAnterior = 0;
 
   if (tiempoActual - tiempoAnterior < intervaloDeMuestreo) return;
