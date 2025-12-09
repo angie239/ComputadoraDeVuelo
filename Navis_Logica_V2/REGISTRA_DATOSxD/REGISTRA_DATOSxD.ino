@@ -22,7 +22,6 @@
 #define BUTTON_PIN 20   // Botón para terminar loop y cerrar archivo
 
 //-------- Sistema de Recuperación ------
-// OJO: se movió PIN_RECUPERACION1 para no compartir el pin del botón
 #define PIN_RECUPERACION1 21 
 #define PIN_RECUPERACION2 22
 
@@ -30,8 +29,8 @@
 #define PIN_BATERIA2 27
 
 // --------------- I2C ------------------ 
-#define GY_SCL   1    // SCL
-#define GY_SDA   2    // SDA
+#define GY_SDA   41    // SDA 
+#define GY_SCL   42    // SCL
 
 //---------ESTADOS-----------
 #define ESTADO_1_STANDBY_VUELO      1
@@ -73,14 +72,13 @@ Adafruit_MPU6050 mpu;
 Adafruit_BME280  bme;
 Adafruit_HMC5883_Unified mag = Adafruit_HMC5883_Unified(12345);
 
-//-------------------------VARIABLES
+// ------------------ VARIABLES GLOBALES ------------------
 float altitudMax     = 0;
 float altitudActual  = 0;
 float altitudInicial = 0;
 float presionInicial = 0;
 float aceleracionTotal = 0;
-
-float voltaje = 0;
+float voltaje        = 0;
 
 // ------------------ PROTOTIPOS
 void gestionEstados(unsigned long tiempoActual);
@@ -89,6 +87,7 @@ void logFila(float altitud, float headingDeg, const char* cardinal,
 void Datos(float altitudActual, float headingDeg, const char* cardinal);
 void setBlinkHz(float hz);
 void updateBlink();
+void enableMpu6050Bypass(); // <--- PROTOTIPO AGREGADO
 
 // ------------------ INICIALIZACION SENSORES
 
@@ -252,7 +251,7 @@ void calculaOrientacion(float &headingDegrees, const char* &cardinal) { //Calibr
 
   sensors_event_t event;
   mag.getEvent(&event);
-     
+      
   float headingRad = atan2(event.magnetic.y, event.magnetic.x);
   headingDegrees = headingRad * 180.0 / PI;
   headingDegrees += anguloDeclinacion; //Declinación magnética aprox.
@@ -404,7 +403,7 @@ float voltajeBateria() {
 }
 
 // ---------- Escribir una fila en el CSV ----------
-// Usa archivo global `registro` y flush periódico
+// Usa archivo global registro y flush periódico
 void logFila(float altitud, float headingDeg, const char* cardinal,
              float ax, float ay, float az) {
   if (!cardOK || !fileOK || !registro) return;
@@ -485,8 +484,16 @@ void setup() {
   pinMode(BUTTON_PIN, INPUT_PULLUP); // botón a GND
 
   // ESTADO 0 Inicialización de sensores
+  
+  // 1. PRIMERO inicializamos MPU
   mpuOK = inicializarMPU();
+  
+  // 2. ¡CRUCIAL! Activamos el BYPASS justo aquí para que la brújula sea visible
+  enableMpu6050Bypass();
+  
+  // 3. AHORA SÍ inicializamos el HMC
   magOK = inicializarHMC();
+  
   bmeOK = inicializarBME();
 
   // SD al final (con SPI ya listo)
@@ -530,8 +537,8 @@ void setup() {
 }
 
 void loop() {
-  static bool stopRequested     = false;
-  static int  lastButtonState   = HIGH;
+  static bool stopRequested = false;
+  static int  lastButtonState = HIGH;
 
   // Lectura del botón (activo en LOW)
   int buttonState = digitalRead(BUTTON_PIN);
@@ -622,4 +629,26 @@ void gestionEstados(unsigned long tiempoActual) {
       procesoRecuperacion();
       break;
   }
+}
+
+// ---BYPASS ---
+void enableMpu6050Bypass() {
+  // Dirección del MPU6050
+  byte mpuAddress = 0x68; 
+
+  // Despertar el MPU6050 
+  Wire.beginTransmission(mpuAddress);
+  Wire.write(0x6B); // Registro PWR_MGMT_1
+  Wire.write(0x00); // Escribir 0 para despertar
+  Wire.endTransmission();
+  delay(50);
+
+  //Activar I2C Bypass (Bit 1 del registro 0x37)
+  Wire.beginTransmission(mpuAddress);
+  Wire.write(0x37); // Registro INT_PIN_CFG
+  Wire.write(0x02); // Escribir 0x02 para activar bypass
+  Wire.endTransmission();
+  delay(50);
+  
+  Serial.println("Bypass activado en MPU6050.");
 }
