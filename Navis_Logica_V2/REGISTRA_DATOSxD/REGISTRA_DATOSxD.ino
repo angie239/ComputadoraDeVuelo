@@ -13,7 +13,7 @@
 #define SCK   36   // FSPICLK
 #define MISO  37   // FSPIQ
 #define MOSI  35   // FSPID
-#define SD_CS 11   // CS 
+#define SD_CS 10   // CS 
 
 #define SIGN_LED 4 // LED de señal 
 #define BUZZER 14  // Buzzer (libre, no USB/JTAG)
@@ -29,8 +29,8 @@
 #define PIN_BATERIA2 27
 
 // --------------- I2C ------------------ 
-#define GY_SDA   41    // SDA 
-#define GY_SCL   42    // SCL
+#define GY_SDA   2    // SDA 
+#define GY_SCL   1    // SCL
 
 //---------ESTADOS-----------
 #define ESTADO_1_STANDBY_VUELO      1
