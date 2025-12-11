@@ -475,6 +475,8 @@ void setup() {
   pinMode(BUZZER,   OUTPUT);
   pinMode(PIN_RECUPERACION1, OUTPUT);
   pinMode(PIN_RECUPERACION2, OUTPUT);
+  pinMode(CS, PULLUP);
+  pinMode(SCK, PULLUP);
   digitalWrite(SIGN_LED, LOW);
   digitalWrite(BUZZER,   LOW);
   digitalWrite(PIN_RECUPERACION1, HIGH);
