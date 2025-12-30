@@ -1,4 +1,4 @@
-/*
+      /*
  * Servidor Web en ESP32 para listar y descargar archivos de una Tarjeta SD
  * usando pines SPI personalizados.
  * * ATENCIÓN:
@@ -18,14 +18,14 @@
 #include <WebServer.h> // Librería para el servidor web
 
 // --- Configuración de Red ---
-const char* ssid = "A55 de Zahul";
-const char* password = "ingeniebros";
+const char* ssid = "IZZI-4000";
+const char* password = "25050754856A";
 
 // --- Configuración de Pines SPI Personalizados ---
 #define SCK_PIN  36
 #define MISO_PIN 37
 #define MOSI_PIN 35
-#define CS_PIN   10
+#define CS_PIN   11
 
 // --- Variables Globales ---
 WebServer server(80); // Inicia el servidor en el puerto 80 (HTTP)
