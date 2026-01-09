@@ -12,8 +12,6 @@
 
   Aun falta la parte de calibrar el magnetometro estando en el momento del lanzamiento, esto mismo se podra hacer en otro codigo
   y en este solo utilizamos la implementacion final con la calibracion.
-
-
 */
 
 
@@ -29,6 +27,10 @@
 #include <math.h>
 
 #define SEALEVELPRESSURE_HPA (1013.25)
+
+// --- Declinación magnética --
+// Tenango, Morelos: 3.833°
+#define ANGULO_DECLINACION_DEG 3.833 
 
 // ----- Pines -----
 #define SCL 1
@@ -76,6 +78,7 @@ struct dataPacket {
   float alturaMSNM, alturaRelativa;
   float alturaMax = 0.0;
   float heading;
+  const char* cardinal; // <--- AGREGADO PARA DIRECCIÓN
   float magX, magY, magZ;
   float gyX, gyY, gyZ;
   float accX, accY, accZ;
@@ -90,8 +93,8 @@ const int limiteMuestras = 20;   // limite de muestras para confirmar apogeo
 const float alturaMin = 0.0;  // altura minima para activar recuperacion / 1 para pruebas
 static float altitudFiltrada = 0.0;
 
-bool apogeoDetectado = false;      // bandera - deteccion de apogeo
-bool ignitorActivo = false;      //   bandera - ignitores activos
+bool apogeoDetectado = false;       // bandera - deteccion de apogeo
+bool ignitorActivo = false;       //   bandera - ignitores activos
 unsigned long inicioIgnitores = 0; // marca de inicio
 const unsigned long duracionIgnitores = 2000; // duración del pulso 
 
@@ -108,7 +111,7 @@ void IRAM_ATTR ISR_stopButton() {
 }
 
 void setup() {
-  pinMode(buzzer,   OUTPUT);
+  pinMode(buzzer,    OUTPUT);
   playStartup();    // musica de inicializacion
 
   unsigned long t_init0 = millis();
@@ -137,7 +140,9 @@ void setup() {
     mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
     mpu.setGyroRange(MPU6050_RANGE_500_DEG);
     mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
-    mpu.setI2CBypass(true);
+    
+    
+    mpu.setI2CBypass(true); // habilita el bypass para que el magnetómetro sea visible
   }
 
   if (!mag.begin()) {
@@ -192,6 +197,10 @@ void setup() {
   alturaIni = prom / 50;
   
   Serial.printf("altura inicial %f msnm\n", alturaIni);
+  
+  // Info de calibración
+  Serial.print("Declinacion Magnetica Configurada: ");
+  Serial.println(ANGULO_DECLINACION_DEG);
 
   unsigned long t_init1 = millis();
   unsigned long ti = t_init1 - t_init0;
@@ -278,7 +287,9 @@ void loop() {
   // imprimimos por puerto serie, en implementacion final, se puede obviar esta seccion
   if (ahora - tiempoUltimaImpresion >= 500) {
     tiempoUltimaImpresion = ahora;
-    Serial.printf("T: %lu | Alt[msnm]: %.2f |  Alt rel [m]: %.2f | Bat: %.2f V\n", datosVuelo.tiempo, datosVuelo.alturaMSNM, datosVuelo.alturaRelativa, datosVuelo.voltajeBateria);
+   
+    Serial.printf("T: %lu | Alt: %.2f | Dir: %s (%.0f°) | Bat: %.2f V\n", 
+      datosVuelo.tiempo, datosVuelo.alturaRelativa, datosVuelo.cardinal, datosVuelo.heading, datosVuelo.voltajeBateria);
   }
 
 
@@ -308,7 +319,7 @@ bool initFileSD() {
 
   Serial.printf("Archivo creado: %s\n",filename);
 
-  registro.println("Tiempo [ms],Presion [Pa],Altitud [msnm],Altura Relativa [m],Altura Maxima Relativa [m],Heading [deg],AccX [m/s^2],AccY [m/s^2],AccZ [m/s^2],gyX [deg/s],gyY [deg/s],gyZ [deg/s],magX [uT],magY [uT],magZ [uT],voltaje Bateria [V]");
+  registro.println("Tiempo [ms],Presion [Pa],Altitud [msnm],Altura Relativa [m],Altura Maxima Relativa [m],Heading [deg],Direccion,AccX [m/s^2],AccY [m/s^2],AccZ [m/s^2],gyX [deg/s],gyY [deg/s],gyZ [deg/s],magX [uT],magY [uT],magZ [uT],voltaje Bateria [V]");
   // registramos el header para cada dato
   registro.flush();// aseguramos escritura
 
@@ -338,15 +349,40 @@ void leerSensores() {
   datosVuelo.magY = m.magnetic.y;
   datosVuelo.magZ = m.magnetic.z;
 
-  float headingRad = atan2(datosVuelo.magY, datosVuelo.magX); // calculamos el heading o direccion
+  // --- CALCULO DE RUMBO CON DECLINACIÓN---
+  float headingRad = atan2(datosVuelo.magY, datosVuelo.magX); 
 
-  // ponemos el heading en grados y seteamos en caso de que sea negativo
+  // Aplicar la Declinación Magnética de Tenango (3.833 grados convertidos a radianes)
+  float declinationRad = ANGULO_DECLINACION_DEG * (PI / 180.0); 
+  headingRad += declinationRad;
+
+  // Normalización
+  if(headingRad < 0) headingRad += 2*PI;
+  if(headingRad > 2*PI) headingRad -= 2*PI;
+
+  // Convertir a Grados
   float headingDeg = headingRad * 180.0 / PI;
-  if (headingDeg < 0) {
-    headingDeg += 360;
-  }
-
   datosVuelo.heading = headingDeg;
+
+  // --- PUNTOS CARDINALES---
+  if (headingDeg > 348.75 || headingDeg <= 11.25) datosVuelo.cardinal = "N";
+  else if (headingDeg <= 33.75)  datosVuelo.cardinal = "NNE";
+  else if (headingDeg <= 56.25)  datosVuelo.cardinal = "NE";
+  else if (headingDeg <= 78.75)  datosVuelo.cardinal = "ENE";
+  else if (headingDeg <= 101.25) datosVuelo.cardinal = "E";
+  else if (headingDeg <= 123.75) datosVuelo.cardinal = "ESE";
+  else if (headingDeg <= 146.25) datosVuelo.cardinal = "SE";
+  else if (headingDeg <= 168.75) datosVuelo.cardinal = "SSE";
+  else if (headingDeg <= 191.25) datosVuelo.cardinal = "S";
+  else if (headingDeg <= 213.75) datosVuelo.cardinal = "SSW";
+  else if (headingDeg <= 236.25) datosVuelo.cardinal = "SW";
+  else if (headingDeg <= 258.75) datosVuelo.cardinal = "WSW";
+  else if (headingDeg <= 281.25) datosVuelo.cardinal = "W";
+  else if (headingDeg <= 303.75) datosVuelo.cardinal = "WNW";
+  else if (headingDeg <= 326.25) datosVuelo.cardinal = "NW";
+  else                           datosVuelo.cardinal = "NNW";
+  // ----------------------------------------------------
+
   datosVuelo.pressure = bme.readPressure(); 
   datosVuelo.alturaMSNM   = bme.readAltitude(SEALEVELPRESSURE_HPA); // obtenemos altura directamente de la libreria 
   datosVuelo.alturaRelativa = datosVuelo.alturaMSNM - alturaIni; // calculamos la altura relativa con respecto al suelo.
@@ -356,13 +392,15 @@ void leerSensores() {
 }
 
 void guardarDatosSD() {
-  registro.printf("%lu,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f\n",
+
+  registro.printf("%lu,%.2f,%.2f,%.2f,%.2f,%.2f,%s,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f\n",
     datosVuelo.tiempo,  
     datosVuelo.pressure,    
     datosVuelo.alturaMSNM, datosVuelo.alturaRelativa, datosVuelo.alturaMax,
     datosVuelo.heading,
+    datosVuelo.cardinal, 
     datosVuelo.accX, datosVuelo.accY, datosVuelo.accZ,
-    datosVuelo.gyX,  datosVuelo.gyY,  datosVuelo.gyZ,      
+    datosVuelo.gyX,  datosVuelo.gyY,  datosVuelo.gyZ,       
     datosVuelo.magX, datosVuelo.magY, datosVuelo.magZ,
     datosVuelo.voltajeBateria 
   );
@@ -407,7 +445,7 @@ void playStartup() {
   delay(100);
   tone(buzzer, 1318, 100); 
   delay(100);
-  noTone(buzzer);          
+  noTone(buzzer);           
 
   delay(200);
   tone(buzzer, 1760, 400); 
