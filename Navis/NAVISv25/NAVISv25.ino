@@ -90,13 +90,13 @@ float prom = 0;
 float alturaIni = 0.0;
 int contadorDescenso = 0;       // variable contador de muestras
 const int limiteMuestras = 20;   // limite de muestras para confirmar apogeo
-const float alturaMin = 0.0;  // altura minima para activar recuperacion / 1 para pruebas
+const float alturaMin = 1.0;  // altura minima para activar recuperacion / 1 para pruebas
 static float altitudFiltrada = 0.0;
 
 bool apogeoDetectado = false;       // bandera - deteccion de apogeo
 bool ignitorActivo = false;       //   bandera - ignitores activos
 unsigned long inicioIgnitores = 0; // marca de inicio
-const unsigned long duracionIgnitores = 2000; // duración del pulso 
+const unsigned long duracionIgnitores = 700; // duración del pulso 
 
 // --- Variables de Control de Tiempo ---
 unsigned long tiempoUltimoLog = 0;
@@ -288,8 +288,8 @@ void loop() {
   if (ahora - tiempoUltimaImpresion >= 500) {
     tiempoUltimaImpresion = ahora;
    
-    Serial.printf("T: %lu | Alt: %.2f | Dir: %s (%.0f°) | Bat: %.2f V\n", 
-      datosVuelo.tiempo, datosVuelo.alturaRelativa, datosVuelo.cardinal, datosVuelo.heading, datosVuelo.voltajeBateria);
+    Serial.printf("T: %lu | Alt: %.2f | Dir: %s (%.0f°) | Bat: %.2f V | heading: %.2f\n", 
+      datosVuelo.tiempo, datosVuelo.alturaRelativa, datosVuelo.cardinal, datosVuelo.heading, datosVuelo.voltajeBateria, datosVuelo.heading);
   }
 
 

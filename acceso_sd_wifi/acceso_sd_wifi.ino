@@ -18,8 +18,8 @@
 #include <WebServer.h> // Librería para el servidor web
 
 // --- Configuración de Red ---
-const char* ssid = "IZZI-4000";
-const char* password = "25050754856A";
+const char* ssid = "iPhone";
+const char* password = "navispro";
 
 // --- Configuración de Pines SPI Personalizados ---
 #define SCK_PIN  36
