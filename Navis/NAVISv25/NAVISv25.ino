@@ -78,7 +78,6 @@ struct dataPacket {
   float alturaMSNM, alturaRelativa;
   float alturaMax = 0.0;
   float heading;
-  const char* cardinal; // <--- AGREGADO PARA DIRECCIÓN
   float magX, magY, magZ;
   float gyX, gyY, gyZ;
   float accX, accY, accZ;
@@ -288,8 +287,8 @@ void loop() {
   if (ahora - tiempoUltimaImpresion >= 500) {
     tiempoUltimaImpresion = ahora;
    
-    Serial.printf("T: %lu | Alt: %.2f | Dir: %s (%.0f°) | Bat: %.2f V | heading: %.2f\n", 
-      datosVuelo.tiempo, datosVuelo.alturaRelativa, datosVuelo.cardinal, datosVuelo.heading, datosVuelo.voltajeBateria, datosVuelo.heading);
+    Serial.printf("T: %lu | Alt: %.2f | Bat: %.2f V | heading: %.2f\n", 
+      datosVuelo.tiempo, datosVuelo.alturaRelativa, datosVuelo.voltajeBateria, datosVuelo.heading);
   }
 
 
@@ -364,23 +363,6 @@ void leerSensores() {
   float headingDeg = headingRad * 180.0 / PI;
   datosVuelo.heading = headingDeg;
 
-  // --- PUNTOS CARDINALES---
-  if (headingDeg > 348.75 || headingDeg <= 11.25) datosVuelo.cardinal = "N";
-  else if (headingDeg <= 33.75)  datosVuelo.cardinal = "NNE";
-  else if (headingDeg <= 56.25)  datosVuelo.cardinal = "NE";
-  else if (headingDeg <= 78.75)  datosVuelo.cardinal = "ENE";
-  else if (headingDeg <= 101.25) datosVuelo.cardinal = "E";
-  else if (headingDeg <= 123.75) datosVuelo.cardinal = "ESE";
-  else if (headingDeg <= 146.25) datosVuelo.cardinal = "SE";
-  else if (headingDeg <= 168.75) datosVuelo.cardinal = "SSE";
-  else if (headingDeg <= 191.25) datosVuelo.cardinal = "S";
-  else if (headingDeg <= 213.75) datosVuelo.cardinal = "SSW";
-  else if (headingDeg <= 236.25) datosVuelo.cardinal = "SW";
-  else if (headingDeg <= 258.75) datosVuelo.cardinal = "WSW";
-  else if (headingDeg <= 281.25) datosVuelo.cardinal = "W";
-  else if (headingDeg <= 303.75) datosVuelo.cardinal = "WNW";
-  else if (headingDeg <= 326.25) datosVuelo.cardinal = "NW";
-  else                           datosVuelo.cardinal = "NNW";
   // ----------------------------------------------------
 
   datosVuelo.pressure = bme.readPressure(); 
@@ -398,7 +380,6 @@ void guardarDatosSD() {
     datosVuelo.pressure,    
     datosVuelo.alturaMSNM, datosVuelo.alturaRelativa, datosVuelo.alturaMax,
     datosVuelo.heading,
-    datosVuelo.cardinal, 
     datosVuelo.accX, datosVuelo.accY, datosVuelo.accZ,
     datosVuelo.gyX,  datosVuelo.gyY,  datosVuelo.gyZ,       
     datosVuelo.magX, datosVuelo.magY, datosVuelo.magZ,
