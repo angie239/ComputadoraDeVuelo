@@ -30,7 +30,7 @@
 
 // --- Declinación magnética --
 // Tenango, Morelos: 3.833°
-#define ANGULO_DECLINACION_DEG 3.833 
+#define ANGULO_DECLINACION_DEG 3.833
 
 // ----- Pines -----
 #define SCL 1
@@ -53,8 +53,8 @@
 #define numPixels 1
 #define neoPixel 4
 
-File registro; 
-char filename[16]; 
+File registro;
+char filename[16];
 unsigned long lineCount = 0;
 int numvuel = 0;
 
@@ -69,7 +69,7 @@ bool bmeOk = false;
 bool sdOk = false;
 bool fileOk = false;
 
-volatile bool stopRequested = false; 
+volatile bool stopRequested = false;
 
 // ------------------ Estructura de datos ------------------
 struct dataPacket {
@@ -82,20 +82,21 @@ struct dataPacket {
   float gyX, gyY, gyZ;
   float accX, accY, accZ;
   float voltajeBateria;
+  bool flagIgnitor,flagApogeo;
 };
 dataPacket datosVuelo;
 
 float prom = 0;
 float alturaIni = 0.0;
 int contadorDescenso = 0;       // variable contador de muestras
-const int limiteMuestras = 20;   // limite de muestras para confirmar apogeo
-const float alturaMin = 1.0;  // altura minima para activar recuperacion / 1 para pruebas
+const int limiteMuestras = 20;  // limite de muestras para confirmar apogeo
+const float alturaMin = 2.0;    // altura minima para activar recuperacion / 1 para pruebas
 static float altitudFiltrada = 0.0;
 
-bool apogeoDetectado = false;       // bandera - deteccion de apogeo
-bool ignitorActivo = false;       //   bandera - ignitores activos
-unsigned long inicioIgnitores = 0; // marca de inicio
-const unsigned long duracionIgnitores = 700; // duración del pulso 
+bool apogeoDetectado = false;                 // bandera - deteccion de apogeo
+bool ignitorActivo = false;                   //   bandera - ignitores activos
+unsigned long inicioIgnitores = 0;            // marca de inicio
+const unsigned long duracionIgnitores = 750;  // duración del pulso
 
 // --- Variables de Control de Tiempo ---
 unsigned long tiempoUltimoLog = 0;
@@ -110,22 +111,22 @@ void IRAM_ATTR ISR_stopButton() {
 }
 
 void setup() {
-  pinMode(buzzer,    OUTPUT);
-  playStartup();    // musica de inicializacion
+  pinMode(buzzer, OUTPUT);
+  playStartup();  // musica de inicializacion
 
   unsigned long t_init0 = millis();
   Serial.begin(115200);
 
-  pixels.begin(); // inicializamos el neopixel 
+  pixels.begin();  // inicializamos el neopixel
   pixels.clear();
   pixels.show();
 
   // Inicialización: Morado
   pixels.setPixelColor(0, pixels.Color(148, 0, 211));
   pixels.show();
-  
-  Wire.begin(SDA, SCL); // inicializacion del protocolo i2c
-  SPI.begin(SCK, MISO, MOSI, CS); // inicializacion del protocolo SPI
+
+  Wire.begin(SDA, SCL);            // inicializacion del protocolo i2c
+  SPI.begin(SCK, MISO, MOSI, CS);  // inicializacion del protocolo SPI
 
   Serial.println("iniciando sensores...");
 
@@ -139,9 +140,9 @@ void setup() {
     mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
     mpu.setGyroRange(MPU6050_RANGE_500_DEG);
     mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
-    
-    
-    mpu.setI2CBypass(true); // habilita el bypass para que el magnetómetro sea visible
+
+
+    mpu.setI2CBypass(true);  // habilita el bypass para que el magnetómetro sea visible
   }
 
   if (!mag.begin()) {
@@ -160,7 +161,7 @@ void setup() {
     bmeOk = true;
   }
 
-  if(!SD.begin(CS)){
+  if (!SD.begin(CS)) {
     Serial.println("SD no inicializada");
     sdOk = false;
   } else {
@@ -171,16 +172,16 @@ void setup() {
 
   // inicializacion de GPIOS
   pinMode(ledIndicator, OUTPUT);
-  
+
   pinMode(recuIgnitor1, OUTPUT);
   pinMode(recuIgnitor2, OUTPUT);
 
-  pinMode(beforeFlightSwitch1, INPUT); 
+  pinMode(beforeFlightSwitch1, INPUT);
   pinMode(beforeFlightSwitch2, INPUT);
-  
+
   // --- CONFIGURACIÓN DE LA INTERRUPCIÓN ---
-  pinMode(stopButton, INPUT); 
-  attachInterrupt(digitalPinToInterrupt(stopButton), ISR_stopButton, FALLING); // tomaremos el boton de paro como una interrupcion
+  pinMode(stopButton, INPUT);
+  attachInterrupt(digitalPinToInterrupt(stopButton), ISR_stopButton, FALLING);  // tomaremos el boton de paro como una interrupcion
 
   digitalWrite(ledIndicator, LOW);
   digitalWrite(recuIgnitor1, LOW);
@@ -189,14 +190,14 @@ void setup() {
   Serial.println("estableciendo altura con respecto al nivel del suelo..");
 
   // toma de muestras para altura relativa
-  for(int i = 0; i < 50; i++){
+  for (int i = 0; i < 50; i++) {
     prom += bme.readAltitude(SEALEVELPRESSURE_HPA);
     delay(10);
   }
   alturaIni = prom / 50;
-  
+
   Serial.printf("altura inicial %f msnm\n", alturaIni);
-  
+
   // Info de calibración
   Serial.print("Declinacion Magnetica Configurada: ");
   Serial.println(ANGULO_DECLINACION_DEG);
@@ -206,23 +207,24 @@ void setup() {
   Serial.printf("tiempo de inicializacion: %lu ms\n", ti);
 
   bool todoOk = bmeOk && hmcOk && mpuOk && sdOk && fileOk;
-  
-  if(todoOk == false){
-    pixels.setPixelColor(0, pixels.Color(255, 0, 0)); // Rojo si error
+
+  //DORMIR EN CASO DE FALLO
+  if (todoOk == false) {
+    pixels.setPixelColor(0, pixels.Color(255, 0, 0));  // Rojo si error
     pixels.show();
     playFailure();
     Serial.println("algun sensor no inicializado, esperando reset...");
-    esp_deep_sleep_start(); // duerme en caso de fallo
+    esp_deep_sleep_start();  // duerme en caso de fallo
   }
-  
-  pixels.setPixelColor(0, pixels.Color(0, 255, 0)); // Verde: Sistema OK -> esperando switches
+
+  pixels.setPixelColor(0, pixels.Color(235, 255, 0));  // Amarillo fuerte: Sistema OK -> esperando switches
   pixels.show();
   playSuccess();
-  
+
   Serial.println("esperando activación de switches...");
 
   unsigned long previousMillis = 0;
-  const long interval = 250; 
+  const long interval = 250;
 
   // mientras ambos botones esten en cero (accionados o que aun no se retira el "remove before flight") ejecutamos una rutina de encendido y apagado del led
   while (digitalRead(beforeFlightSwitch1) == LOW || digitalRead(beforeFlightSwitch2) == LOW) {
@@ -231,7 +233,7 @@ void setup() {
 
     if (currentMillis - previousMillis >= interval) {
       previousMillis = currentMillis;
-      
+
       if (ledState == LOW) {
         ledState = HIGH;
       } else {
@@ -242,41 +244,41 @@ void setup() {
   }
 
   Serial.println("Switches activados. Iniciando grabación de datos.");
-  pixels.setPixelColor(0, pixels.Color(0, 0, 255)); // Azul: Grabando
+  pixels.setPixelColor(0, pixels.Color(0, 255, 0));  // verde: Grabando
   pixels.show();
 
   // terminamos fase inicial, pasamos al grabado de datos
 }
 
 void loop() {
-  unsigned long ahora = millis(); // iniciamos marca de tiempo actual 
+  unsigned long ahora = millis();  // iniciamos marca de tiempo actual
 
   if (stopRequested) {  // preguntamos si la bandera de stop esta en alto
-    leerSensores(); // realiza por ultima vez una lectura
-    guardarDatosSD(); // guardamos datos
-    
-    registro.flush(); // se hace un flush para enviar datos faltantes en caso de haber
-    registro.close(); // cerramos el archivo
+    leerSensores();     // realiza por ultima vez una lectura
+    guardarDatosSD();   // guardamos datos
+
+    registro.flush();  // se hace un flush para enviar datos faltantes en caso de haber
+    registro.close();  // cerramos el archivo
     Serial.println("Boton de paro presionado");
 
-    // Cambiar LED a Verde
-    pixels.setPixelColor(0, pixels.Color(0, 255, 0));  
+    // Cambiar LED a AZUL DORMIDO
+    pixels.setPixelColor(0, pixels.Color(80, 40, 200));
     pixels.show();
-    esp_deep_sleep_start(); // dormimos y esperamos reset ...
+    esp_deep_sleep_start();  // dormimos y esperamos reset ...
   }
-  
+
   // tasa de muestreo cada 50ms o 20Hz
-  if (ahora - tiempoUltimoLog >= 50) { // checo si entre la ultima vez que lo hice y ahora hay 50ms
-    tiempoUltimoLog = ahora; // marca de tiempo dentro de bucle (vez que lo hice)
-    
+  if (ahora - tiempoUltimoLog >= 25) {  // checo si entre la ultima vez que lo hice y ahora hay 50ms
+    tiempoUltimoLog = ahora;            // marca de tiempo dentro de bucle (vez que lo hice)
+
     leerSensores();
     detectarApogeo();
-    guardarDatosSD(); 
+    guardarDatosSD();
   }
 
   // verificamos "a la vez" el estado de los ignitores
   if (ignitorActivo) {
-    if (millis() - inicioIgnitores >= duracionIgnitores) { // hacemos la diferencia de tiempos entre cuando se activo y el tiempo actual
+    if (millis() - inicioIgnitores >= duracionIgnitores) {  // hacemos la diferencia de tiempos entre cuando se activo y el tiempo actual
       digitalWrite(recuIgnitor1, LOW);
       digitalWrite(recuIgnitor2, LOW);
       ignitorActivo = false;
@@ -286,59 +288,57 @@ void loop() {
   // imprimimos por puerto serie, en implementacion final, se puede obviar esta seccion
   if (ahora - tiempoUltimaImpresion >= 500) {
     tiempoUltimaImpresion = ahora;
-   
-    Serial.printf("T: %lu | Alt: %.2f | Bat: %.2f V | heading: %.2f\n", 
-      datosVuelo.tiempo, datosVuelo.alturaRelativa, datosVuelo.voltajeBateria, datosVuelo.heading);
+
+    Serial.printf("T: %lu | Alt: %.2f | Bat: %.2f V | heading: %.2f\n",
+                  datosVuelo.tiempo, datosVuelo.alturaRelativa, datosVuelo.voltajeBateria, datosVuelo.heading);
   }
-
-
 }
 
 bool initFileSD() {
-  uint64_t cardSize = SD.cardSize() / (1024 * 1024); // brindamos el valor de la  bateria en MB
+  uint64_t cardSize = SD.cardSize() / (1024 * 1024);  // brindamos el valor de la  bateria en MB
   Serial.printf("Tamaño de la SD: %llu MB\n", cardSize);
 
-  while (numvuel < 1000) { // num vuel inicial -> 0 y verificamos cual numero de vuelo no se ha utilizado hasta el 999
-    snprintf(filename, sizeof(filename), "/V%03d.CSV", numvuel); // construimos un nombre de archivo
-    if (!SD.exists(filename)) break; // si el archivo no existe, salimos del bucle
+  while (numvuel < 1000) {                                        // num vuel inicial -> 0 y verificamos cual numero de vuelo no se ha utilizado hasta el 999
+    snprintf(filename, sizeof(filename), "/V%03d.CSV", numvuel);  // construimos un nombre de archivo
+    if (!SD.exists(filename)) break;                              // si el archivo no existe, salimos del bucle
     numvuel++;
   }
 
-  if (numvuel >= 1000) { // verificamos que no hayamos pasado el limite de archivos
+  if (numvuel >= 1000) {  // verificamos que no hayamos pasado el limite de archivos
     Serial.println("Limite archivos alcanzado");
     return false;
   }
 
-  registro = SD.open(filename, FILE_WRITE); // abrimos el archivo con el nombre anteriormente creado
-  
+  registro = SD.open(filename, FILE_WRITE);  // abrimos el archivo con el nombre anteriormente creado
+
   if (!registro) {
     Serial.printf("Error al crear: %s\n", filename);
     return false;
   }
 
-  Serial.printf("Archivo creado: %s\n",filename);
+  Serial.printf("Archivo creado: %s\n", filename);
 
-  registro.println("Tiempo [ms],Presion [Pa],Altitud [msnm],Altura Relativa [m],Altura Maxima Relativa [m],Heading [deg],Direccion,AccX [m/s^2],AccY [m/s^2],AccZ [m/s^2],gyX [deg/s],gyY [deg/s],gyZ [deg/s],magX [uT],magY [uT],magZ [uT],voltaje Bateria [V]");
+  registro.println("Tiempo [ms],Presion [Pa],Altitud [msnm],Altura Relativa [m],Altura Maxima Relativa [m],Heading [deg],AccX [m/s^2],AccY [m/s^2],AccZ [m/s^2],gyX [deg/s],gyY [deg/s],gyZ [deg/s],magX [uT],magY [uT],magZ [uT],voltaje Bateria [V],FlagIgnitor,FlagApogeo");
   // registramos el header para cada dato
-  registro.flush();// aseguramos escritura
+  registro.flush();  // aseguramos escritura
 
   return true;
 }
 
 void leerSensores() {
-  datosVuelo.tiempo = millis(); // obtenemos marca de tiempo en datos
+  datosVuelo.tiempo = millis();  // obtenemos marca de tiempo en datos
   // declaramos  datos como eventos de los sensores (capa de abstraccion libreria de Adafruit unified sensor)
   sensors_event_t a, g, temp;
   sensors_event_t m;
 
   // obtenemos los datos de la MPU
-  mpu.getEvent(&a, &g, &temp); // registros de tempertatura: 65 y 66
+  mpu.getEvent(&a, &g, &temp);  // registros de tempertatura: 65 y 66
   datosVuelo.accX = a.acceleration.x;
   datosVuelo.accY = a.acceleration.y;
   datosVuelo.accZ = a.acceleration.z;
 
-  // datos del giroscopio en deg/s  
-  datosVuelo.gyX = g.gyro.x * (180.0 / PI); 
+  // datos del giroscopio en deg/s
+  datosVuelo.gyX = g.gyro.x * (180.0 / PI);
   datosVuelo.gyY = g.gyro.y * (180.0 / PI);
   datosVuelo.gyZ = g.gyro.z * (180.0 / PI);
 
@@ -349,15 +349,15 @@ void leerSensores() {
   datosVuelo.magZ = m.magnetic.z;
 
   // --- CALCULO DE RUMBO CON DECLINACIÓN---
-  float headingRad = atan2(datosVuelo.magY, datosVuelo.magX); 
+  float headingRad = atan2(datosVuelo.magY, datosVuelo.magX);
 
   // Aplicar la Declinación Magnética de Tenango (3.833 grados convertidos a radianes)
-  float declinationRad = ANGULO_DECLINACION_DEG * (PI / 180.0); 
+  float declinationRad = ANGULO_DECLINACION_DEG * (PI / 180.0);
   headingRad += declinationRad;
 
   // Normalización
-  if(headingRad < 0) headingRad += 2*PI;
-  if(headingRad > 2*PI) headingRad -= 2*PI;
+  if (headingRad < 0) headingRad += 2 * PI;
+  if (headingRad > 2 * PI) headingRad -= 2 * PI;
 
   // Convertir a Grados
   float headingDeg = headingRad * 180.0 / PI;
@@ -365,28 +365,29 @@ void leerSensores() {
 
   // ----------------------------------------------------
 
-  datosVuelo.pressure = bme.readPressure(); 
-  datosVuelo.alturaMSNM   = bme.readAltitude(SEALEVELPRESSURE_HPA); // obtenemos altura directamente de la libreria 
-  datosVuelo.alturaRelativa = datosVuelo.alturaMSNM - alturaIni; // calculamos la altura relativa con respecto al suelo.
+  datosVuelo.pressure = bme.readPressure();
+  datosVuelo.alturaMSNM = bme.readAltitude(SEALEVELPRESSURE_HPA);  // obtenemos altura directamente de la libreria
+  datosVuelo.alturaRelativa = datosVuelo.alturaMSNM - alturaIni;   // calculamos la altura relativa con respecto al suelo.
 
   uint16_t rawBat = analogRead(voltageMeasurement);
-  datosVuelo.voltajeBateria = (rawBat / 4095.0) * 3.3 * 3.0; 
+  datosVuelo.voltajeBateria = (rawBat / 4095.0) * 3.3 * 3.0;
 }
 
 void guardarDatosSD() {
 
-  registro.printf("%lu,%.2f,%.2f,%.2f,%.2f,%.2f,%s,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f\n",
-    datosVuelo.tiempo,  
-    datosVuelo.pressure,    
-    datosVuelo.alturaMSNM, datosVuelo.alturaRelativa, datosVuelo.alturaMax,
-    datosVuelo.heading,
-    datosVuelo.accX, datosVuelo.accY, datosVuelo.accZ,
-    datosVuelo.gyX,  datosVuelo.gyY,  datosVuelo.gyZ,       
-    datosVuelo.magX, datosVuelo.magY, datosVuelo.magZ,
-    datosVuelo.voltajeBateria 
-  );
-  
-  registro.flush(); 
+  registro.printf("%lu,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%d,%d\n",
+                  datosVuelo.tiempo,
+                  datosVuelo.pressure,
+                  datosVuelo.alturaMSNM, datosVuelo.alturaRelativa, datosVuelo.alturaMax,
+                  datosVuelo.heading,
+                  datosVuelo.accX, datosVuelo.accY, datosVuelo.accZ,
+                  datosVuelo.gyX, datosVuelo.gyY, datosVuelo.gyZ,
+                  datosVuelo.magX, datosVuelo.magY, datosVuelo.magZ,
+                  datosVuelo.voltajeBateria,
+                  datosVuelo.flagIgnitor,
+                  datosVuelo.flagApogeo);
+
+  registro.flush();
 }
 
 void detectarApogeo() {
@@ -395,57 +396,58 @@ void detectarApogeo() {
 
   if (datosVuelo.alturaRelativa > datosVuelo.alturaMax) {
     datosVuelo.alturaMax = datosVuelo.alturaRelativa;
-    contadorDescenso = 0; // reiniciamos contador porque seguimos subiendo
-  } 
+    contadorDescenso = 0;  // reiniciamos contador porque seguimos subiendo
+  }
   // verificar descenso (restamos 0.5 para evitar valores inestables)
-  else if (datosVuelo.alturaRelativa < (datosVuelo.alturaMax - 0.5)) {
+  else if (datosVuelo.alturaRelativa < (datosVuelo.alturaMax - 1.5)) {
     contadorDescenso++;
   }
   // confirmamos apogeo
   if (contadorDescenso >= limiteMuestras) {
     apogeoDetectado = true;
     Serial.println("APOGEO DETECTADO");
-    
+
     // encendemos ignitores
     digitalWrite(recuIgnitor1, HIGH);
     digitalWrite(recuIgnitor2, HIGH);
-    
+
     ignitorActivo = true;
     inicioIgnitores = millis();
     
-    pixels.setPixelColor(0, pixels.Color(255, 165, 0)); // Naranja -> descenso
+
+    pixels.setPixelColor(0, pixels.Color(255, 0, 255));  // Naranja -> descenso
     pixels.show();
   }
 }
 
 // Funciones auxiliares
 void playStartup() {
-  tone(buzzer, 880, 100);  
+  tone(buzzer, 880, 100);
   delay(100);
-  tone(buzzer, 1109, 100); 
+  tone(buzzer, 1109, 100);
   delay(100);
-  tone(buzzer, 1318, 100); 
+  tone(buzzer, 1318, 100);
   delay(100);
-  noTone(buzzer);           
+  noTone(buzzer);
 
   delay(200);
-  tone(buzzer, 1760, 400); 
+  tone(buzzer, 1760, 400);
   delay(400);
   noTone(buzzer);
 }
 void playSuccess() {
-  tone(buzzer, 880, 100);  
+  tone(buzzer, 880, 100);
   delay(200);
-  tone(buzzer, 1109, 100); 
+  tone(buzzer, 1109, 100);
   delay(200);
   noTone(buzzer);
 }
 void playFailure() {
-  tone(buzzer, 500, 200); 
+  tone(buzzer, 500, 200);
   delay(200);
-  tone(buzzer, 300, 200); 
+  tone(buzzer, 300, 200);
   delay(200);
-  tone(buzzer, 150, 400); 
+  tone(buzzer, 150, 400);
   delay(400);
   noTone(buzzer);
 }
