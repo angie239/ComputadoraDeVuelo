@@ -1,19 +1,19 @@
 /*
-  Version de prueba final del codigo para NAVISv1.1. 
-  
-  En este codigo se busco minimizar tiempo y buscar optimizar la recoleccion de datos. A su vez de hacer el codigo mas legible para su lectura
-  y posible depuracion en caso de que algo llegue a fallar en cierto momento.
-  He de aclarar que el unico punto de falla que pudimos observar durante las pruebas realizadas en este codigo son las conexiones de la SD, 
-  mas que nada las conexiones fisicas, fuera de la falla por las conexiones de la SD no presenta ningun otro problema persistente.
-
-  Se busco utilizar una estructura de datos en vez de variables separadas, 
-  con el objetivo de hacer mas legible lo que se busca guardar. 
-  No tendria sentido registrar en la memoria alguna variable de control, como contadores, banderas de estado, etc. 
-
-  Aun falta la parte de calibrar el magnetometro estando en el momento del lanzamiento, esto mismo se podra hacer en otro codigo
-  y en este solo utilizamos la implementacion final con la calibracion.
-*/
-
+ * PROYECTO: NAVIS v1.1 - Computadora de Vuelo
+ * ORGANIZACIÓN: Curiosity Aerospace (Propulsión UNAM)
+ * PLATAFORMA: ESP32-S3
+ * * DESCRIPCIÓN:
+ * Firmware de adquisición de datos y control de recuperación.
+ * Implementa un sistema de registro de datos (Datalogger) a 20Hz y detección 
+ * de apogeo barométrico con filtrado de ventana para despliegue de paracaídas.
+ * * ESTRUCTURA DE DATOS:
+ * Se utiliza 'struct dataPacket' para serialización eficiente y 
+ * coherencia en el buffer de escritura.
+ * * NOTAS DE HARDWARE:
+ * - Sensores: MPU6050 (IMU), HMC5883L (Magnetómetro), BME280 (Barómetro).
+ * - Almacenamiento: SD Card via SPI.
+ * - Indicadores: NeoPixel (WS2812B) para código de colores de estado.
+ */
 
 #include <Wire.h>
 #include <Adafruit_NeoPixel.h>
@@ -26,13 +26,12 @@
 #include <stdio.h>
 #include <math.h>
 
+// --- Constantes Ambientales y Geográficas ---
 #define SEALEVELPRESSURE_HPA (1013.25)
-
-// --- Declinación magnética --
-// Tenango, Morelos: 3.833°
+// Declinación magnética para corrección de rumbo (Tenango, Morelos: ~3.833°)
 #define ANGULO_DECLINACION_DEG 3.833
 
-// ----- Pines -----
+// --- Mapeo de Pines (Hardware Abstraction Layer) ---
 #define SCL 1
 #define SDA 2
 #define MOSI 35
@@ -40,341 +39,346 @@
 #define SCK 36
 #define CS 11
 
+// Actuadores y Periféricos
 #define buzzer 14
 #define stopButton 20
 #define beforeFlightSwitch1 17
 #define beforeFlightSwitch2 18
 #define voltageMeasurement 16
 
+// Ignitores para recuperación
 #define recuIgnitor1 6
 #define recuIgnitor2 7
 
+// Indicadores de Estado
 #define ledIndicator 5
 #define numPixels 1
 #define neoPixel 4
 
+// --- Gestión de Archivos y Buffers ---
 File registro;
 char filename[16];
 unsigned long lineCount = 0;
 int numvuel = 0;
 
+// --- Instancias de Objetos de Sensor ---
 Adafruit_NeoPixel pixels(numPixels, neoPixel, NEO_GRB + NEO_KHZ800);
 Adafruit_MPU6050 mpu;
 Adafruit_BME280 bme;
 Adafruit_HMC5883_Unified mag = Adafruit_HMC5883_Unified(12345);
 
+// --- Banderas de Estado del Sistema ---
 bool mpuOk = false;
 bool hmcOk = false;
 bool bmeOk = false;
 bool sdOk = false;
 bool fileOk = false;
 
+// Variable volátil para acceso seguro dentro de la ISR
 volatile bool stopRequested = false;
 
-// ------------------ Estructura de datos ------------------
+// --- Estructura de Telemetría ---
+// Agrupación de variables para escritura atómica en SD
 struct dataPacket {
-  unsigned long tiempo;
-  float pressure;
-  float alturaMSNM, alturaRelativa;
-  float alturaMax = 0.0;
-  float heading;
-  float magX, magY, magZ;
-  float gyX, gyY, gyZ;
-  float accX, accY, accZ;
-  float voltajeBateria;
-  bool flagIgnitor,flagApogeo;
+  unsigned long tiempo;       // Timestamp [ms]
+  float pressure;             // Presión atmosférica [Pa]
+  float alturaMSNM;           // Altitud absoluta [m]
+  float alturaRelativa;       // Altitud AGL (Above Ground Level) [m]
+  float alturaMax = 0.0;      // Apogeo registrado [m]
+  float heading;              // Rumbo magnético corregido [deg]
+  float magX, magY, magZ;     // Campo magnético [uT]
+  float gyX, gyY, gyZ;        // Velocidad angular [deg/s]
+  float accX, accY, accZ;     // Aceleración lineal [m/s^2]
+  float voltajeBateria;       // Tensión de alimentación [V]
+  bool flagIgnitor, flagApogeo; // Estados lógicos
 };
 dataPacket datosVuelo;
 
+// --- Variables de Lógica de Vuelo ---
 float prom = 0;
-float alturaIni = 0.0;
-int contadorDescenso = 0;       // variable contador de muestras
-const int limiteMuestras = 20;  // limite de muestras para confirmar apogeo
-const float alturaMin = 2.0;    // altura minima para activar recuperacion / 1 para pruebas
+float alturaIni = 0.0;          // Referencia de altitud base (Ground Level)
+int contadorDescenso = 0;       // Acumulador para filtro de detección de apogeo
+const int limiteMuestras = 20;  // Ventana de confirmación (muestras consecutivas descendiendo)
+const float alturaMin = 2.0;    // Altitud mínima AGL para armar sistema de recuperación
 static float altitudFiltrada = 0.0;
 
-bool apogeoDetectado = false;                 // bandera - deteccion de apogeo
-bool ignitorActivo = false;                   //   bandera - ignitores activos
-unsigned long inicioIgnitores = 0;            // marca de inicio
-const unsigned long duracionIgnitores = 750;  // duración del pulso
+// Banderas de Estado de Misión
+bool apogeoDetectado = false;
+bool ignitorActivo = false;
+unsigned long inicioIgnitores = 0;
+const unsigned long duracionIgnitores = 750; // Tiempo de activación pirotécnica [ms]
 
-// --- Variables de Control de Tiempo ---
+// Control de Tiempos (Scheduler)
 unsigned long tiempoUltimoLog = 0;
 unsigned long tiempoUltimaImpresion = 0;
 bool ledState;
 
-
-
-// ---  ISR ---
+/**
+ * @brief Rutina de Servicio de Interrupción (ISR) para Parada de Emergencia.
+ * Configurada con atributo IRAM_ATTR para residir en RAM y garantizar 
+ * ejecución determinista en ESP32.
+ */
 void IRAM_ATTR ISR_stopButton() {
   stopRequested = true;
 }
 
 void setup() {
+  // Configuración de Periféricos de Salida
   pinMode(buzzer, OUTPUT);
-  playStartup();  // musica de inicializacion
+  playStartup(); 
 
   unsigned long t_init0 = millis();
   Serial.begin(115200);
 
-  pixels.begin();  // inicializamos el neopixel
+  // Inicialización de bus LED direccionable
+  pixels.begin();
   pixels.clear();
   pixels.show();
-
-  // Inicialización: Morado
-  pixels.setPixelColor(0, pixels.Color(148, 0, 211));
+  pixels.setPixelColor(0, pixels.Color(148, 0, 211)); // Estado: INICIO (Morado)
   pixels.show();
 
-  Wire.begin(SDA, SCL);            // inicializacion del protocolo i2c
-  SPI.begin(SCK, MISO, MOSI, CS);  // inicializacion del protocolo SPI
+  // Inicialización de Protocolos de Comunicación
+  Wire.begin(SDA, SCL);            // I2C
+  SPI.begin(SCK, MISO, MOSI, CS);  // SPI
 
-  Serial.println("iniciando sensores...");
-
-  // --- INICIALIZACIÓN DE SENSORES ---
+  // --- CONFIGURACIÓN DE SENSORES E INICIALIZACIÓN ---
+  
+  // 1. IMU (MPU6050)
   if (!mpu.begin()) {
-    Serial.println("MPU no inicializado");
     mpuOk = false;
   } else {
     mpuOk = true;
-    Serial.println("MPU Ok");
+    // Configuración de rangos y filtro digital paso bajo (DLPF)
     mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
     mpu.setGyroRange(MPU6050_RANGE_500_DEG);
-    mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
-
-
-    mpu.setI2CBypass(true);  // habilita el bypass para que el magnetómetro sea visible
+    mpu.setFilterBandwidth(MPU6050_BAND_21_HZ); // Filtro agresivo para vibración mecánica
+    mpu.setI2CBypass(true); // Bypass activado para acceso directo al Magnetómetro auxiliar
   }
 
+  // 2. Magnetómetro (HMC5883L)
   if (!mag.begin()) {
-    Serial.println("HMC5883L no inicializado");
     hmcOk = false;
   } else {
-    Serial.println("HMC5883 OK");
     hmcOk = true;
   }
 
+  // 3. Barómetro (BME280)
   if (!bme.begin(0x76)) {
-    Serial.println("BME no inicializado");
     bmeOk = false;
   } else {
-    Serial.println("BME OK");
     bmeOk = true;
   }
 
+  // 4. Almacenamiento (SD Card)
   if (!SD.begin(CS)) {
-    Serial.println("SD no inicializada");
     sdOk = false;
   } else {
-    Serial.println("SD OK");
     sdOk = true;
-    fileOk = initFileSD();
+    fileOk = initFileSD(); // Gestión de nombres de archivo
   }
 
-  // inicializacion de GPIOS
-  pinMode(ledIndicator, OUTPUT);
+  // Configuración avanzada de sobremuestreo (Oversampling) y filtrado IIR del barómetro
+  bme.setSampling(Adafruit_BME280::MODE_NORMAL,
+                  Adafruit_BME280::SAMPLING_X1,   // Temperatura
+                  Adafruit_BME280::SAMPLING_X4,   // Presión (Alta resolución)
+                  Adafruit_BME280::SAMPLING_X1,   // Humedad
+                  Adafruit_BME280::FILTER_X2,     // Filtro IIR
+                  Adafruit_BME280::STANDBY_MS_0_5); // Tasa de refresco máxima
 
+  // Configuración de GPIOs
+  pinMode(ledIndicator, OUTPUT);
   pinMode(recuIgnitor1, OUTPUT);
   pinMode(recuIgnitor2, OUTPUT);
-
   pinMode(beforeFlightSwitch1, INPUT);
   pinMode(beforeFlightSwitch2, INPUT);
 
-  // --- CONFIGURACIÓN DE LA INTERRUPCIÓN ---
+  // Configuración de Interrupción Externa
   pinMode(stopButton, INPUT);
-  attachInterrupt(digitalPinToInterrupt(stopButton), ISR_stopButton, FALLING);  // tomaremos el boton de paro como una interrupcion
+  attachInterrupt(digitalPinToInterrupt(stopButton), ISR_stopButton, FALLING); 
 
+  // Estado seguro inicial (Actuadores apagados)
   digitalWrite(ledIndicator, LOW);
   digitalWrite(recuIgnitor1, LOW);
   digitalWrite(recuIgnitor2, LOW);
 
-  Serial.println("estableciendo altura con respecto al nivel del suelo..");
-
-  // toma de muestras para altura relativa
+  // --- CALIBRACIÓN DE ALTITUD BASE ---
+  
+  // Promedio de 50 muestras para establecer altitud cero
   for (int i = 0; i < 50; i++) {
     prom += bme.readAltitude(SEALEVELPRESSURE_HPA);
     delay(10);
   }
-  alturaIni = prom / 50;
+  alturaIni = prom / 50.0;
 
-  Serial.printf("altura inicial %f msnm\n", alturaIni);
-
-  // Info de calibración
-  Serial.print("Declinacion Magnetica Configurada: ");
-  Serial.println(ANGULO_DECLINACION_DEG);
-
+  // Diagnóstico de tiempo de arranque
   unsigned long t_init1 = millis();
-  unsigned long ti = t_init1 - t_init0;
-  Serial.printf("tiempo de inicializacion: %lu ms\n", ti);
 
+  // Validación final del sistema
   bool todoOk = bmeOk && hmcOk && mpuOk && sdOk && fileOk;
 
-  //DORMIR EN CASO DE FALLO
-  if (todoOk == false) {
-    pixels.setPixelColor(0, pixels.Color(255, 0, 0));  // Rojo si error
+  if (!todoOk) {
+    // ESTADO DE FALLO CRÍTICO
+    pixels.setPixelColor(0, pixels.Color(255, 0, 0)); // Rojo Fijo
     pixels.show();
     playFailure();
-    Serial.println("algun sensor no inicializado, esperando reset...");
-    esp_deep_sleep_start();  // duerme en caso de fallo
+    esp_deep_sleep_start(); // Apagado de bajo consumo para protección
   }
 
-  pixels.setPixelColor(0, pixels.Color(235, 255, 0));  // Amarillo fuerte: Sistema OK -> esperando switches
+  // ESTADO: PRE-ARMADO (Sistema OK, esperando switches)
+  pixels.setPixelColor(0, pixels.Color(235, 255, 0)); // Amarillo
   pixels.show();
   playSuccess();
 
-  Serial.println("esperando activación de switches...");
-
+  // Bucle de espera bloqueante hasta retirar pines "Remove Before Flight"
+  // Implementa parpadeo de LED indicador sin bloquear lógica interna
   unsigned long previousMillis = 0;
   const long interval = 250;
 
-  // mientras ambos botones esten en cero (accionados o que aun no se retira el "remove before flight") ejecutamos una rutina de encendido y apagado del led
   while (digitalRead(beforeFlightSwitch1) == LOW || digitalRead(beforeFlightSwitch2) == LOW) {
-
     unsigned long currentMillis = millis();
-
     if (currentMillis - previousMillis >= interval) {
       previousMillis = currentMillis;
-
-      if (ledState == LOW) {
-        ledState = HIGH;
-      } else {
-        ledState = LOW;
-      }
+      ledState = !ledState;
       digitalWrite(ledIndicator, ledState);
     }
   }
 
-  Serial.println("Switches activados. Iniciando grabación de datos.");
-  pixels.setPixelColor(0, pixels.Color(0, 255, 0));  // verde: Grabando
+  // ESTADO: GRABACIÓN ACTIVA
+  pixels.setPixelColor(0, pixels.Color(0, 255, 0)); // Verde Fijo
   pixels.show();
-
-  // terminamos fase inicial, pasamos al grabado de datos
 }
 
 void loop() {
-  unsigned long ahora = millis();  // iniciamos marca de tiempo actual
+  unsigned long ahora = millis();
 
-  if (stopRequested) {  // preguntamos si la bandera de stop esta en alto
-    leerSensores();     // realiza por ultima vez una lectura
-    guardarDatosSD();   // guardamos datos
+  // Gestión de Parada de Emergencia (Interrupción por Software)
+  if (stopRequested) {
+    leerSensores();     // Última lectura
+    guardarDatosSD();   // Escritura final
+    registro.flush();   // Vaciado de buffer SPI
+    registro.close();   // Cierre seguro de archivo
 
-    registro.flush();  // se hace un flush para enviar datos faltantes en caso de haber
-    registro.close();  // cerramos el archivo
-    Serial.println("Boton de paro presionado");
-
-    // Cambiar LED a AZUL DORMIDO
+    // ESTADO: DORMIDO (Azul)
     pixels.setPixelColor(0, pixels.Color(80, 40, 200));
     pixels.show();
-    esp_deep_sleep_start();  // dormimos y esperamos reset ...
+    esp_deep_sleep_start();
   }
 
-  // tasa de muestreo cada 50ms o 20Hz
-  if (ahora - tiempoUltimoLog >= 25) {  // checo si entre la ultima vez que lo hice y ahora hay 50ms
-    tiempoUltimoLog = ahora;            // marca de tiempo dentro de bucle (vez que lo hice)
-
-    leerSensores();
-    detectarApogeo();
-    guardarDatosSD();
+  // --- SCHEDULER DE TAREAS ---
+  
+  // Tarea 1: Adquisición y Control (40 Hz / 25ms)
+  if (ahora - tiempoUltimoLog >= 25) { 
+    tiempoUltimoLog = ahora;
+    
+    leerSensores();     // Lectura de ADC y buses I2C
+    detectarApogeo();   // Lógica de navegación
+    guardarDatosSD();   // Serialización y guardado
   }
 
-  // verificamos "a la vez" el estado de los ignitores
+  // Tarea 2: Control de Actuadores
+  // Lógica no bloqueante para asegurar pulso exacto de 750ms
   if (ignitorActivo) {
-    if (millis() - inicioIgnitores >= duracionIgnitores) {  // hacemos la diferencia de tiempos entre cuando se activo y el tiempo actual
+    if (millis() - inicioIgnitores >= duracionIgnitores) {
       digitalWrite(recuIgnitor1, LOW);
       digitalWrite(recuIgnitor2, LOW);
       ignitorActivo = false;
-      Serial.println("ignitores apagados");
     }
-  }
-  // imprimimos por puerto serie, en implementacion final, se puede obviar esta seccion
-  if (ahora - tiempoUltimaImpresion >= 500) {
-    tiempoUltimaImpresion = ahora;
-
-    Serial.printf("T: %lu | Alt: %.2f | Bat: %.2f V | heading: %.2f\n",
-                  datosVuelo.tiempo, datosVuelo.alturaRelativa, datosVuelo.voltajeBateria, datosVuelo.heading);
   }
 }
 
+/**
+ * @brief Inicializa el sistema de archivos en la tarjeta SD.
+ * Busca secuencialmente el siguiente nombre de archivo disponible (V000.CSV -> V999.CSV)
+ * para evitar sobrescritura de datos de vuelos anteriores.
+ * * @return true si el archivo se creó exitosamente.
+ * @return false si hubo error de hardware o límite de archivos.
+ */
 bool initFileSD() {
-  uint64_t cardSize = SD.cardSize() / (1024 * 1024);  // brindamos el valor de la  bateria en MB
-  Serial.printf("Tamaño de la SD: %llu MB\n", cardSize);
+  uint64_t cardSize = SD.cardSize() / (1024 * 1024);
 
-  while (numvuel < 1000) {                                        // num vuel inicial -> 0 y verificamos cual numero de vuelo no se ha utilizado hasta el 999
-    snprintf(filename, sizeof(filename), "/V%03d.CSV", numvuel);  // construimos un nombre de archivo
-    if (!SD.exists(filename)) break;                              // si el archivo no existe, salimos del bucle
+  while (numvuel < 1000) {
+    snprintf(filename, sizeof(filename), "/V%03d.CSV", numvuel);
+    if (!SD.exists(filename)) break;
     numvuel++;
   }
 
-  if (numvuel >= 1000) {  // verificamos que no hayamos pasado el limite de archivos
-    Serial.println("Limite archivos alcanzado");
+  if (numvuel >= 1000) {
     return false;
   }
 
-  registro = SD.open(filename, FILE_WRITE);  // abrimos el archivo con el nombre anteriormente creado
+  registro = SD.open(filename, FILE_WRITE);
 
   if (!registro) {
-    Serial.printf("Error al crear: %s\n", filename);
     return false;
   }
 
-  Serial.printf("Archivo creado: %s\n", filename);
 
+  // Escritura de cabecera CSV
   registro.println("Tiempo [ms],Presion [Pa],Altitud [msnm],Altura Relativa [m],Altura Maxima Relativa [m],Heading [deg],AccX [m/s^2],AccY [m/s^2],AccZ [m/s^2],gyX [deg/s],gyY [deg/s],gyZ [deg/s],magX [uT],magY [uT],magZ [uT],voltaje Bateria [V],FlagIgnitor,FlagApogeo");
-  // registramos el header para cada dato
-  registro.flush();  // aseguramos escritura
+  registro.flush();
 
   return true;
 }
 
+/**
+ * @brief Adquisición de datos brutos y procesamiento primario.
+ * Realiza:
+ * 1. Lectura de buses I2C (IMU, Mag, Baro).
+ * 2. Conversión de unidades (Radianes a Grados, ADC a Voltaje).
+ * 3. Fusión de sensores para cálculo de rumbo (Heading) con compensación de declinación.
+ */
 void leerSensores() {
-  datosVuelo.tiempo = millis();  // obtenemos marca de tiempo en datos
-  // declaramos  datos como eventos de los sensores (capa de abstraccion libreria de Adafruit unified sensor)
-  sensors_event_t a, g, temp;
-  sensors_event_t m;
+  datosVuelo.tiempo = millis();
+  
+  // Estructuras para eventos de sensores Adafruit Unified
+  sensors_event_t a, g, temp, m;
 
-  // obtenemos los datos de la MPU
-  mpu.getEvent(&a, &g, &temp);  // registros de tempertatura: 65 y 66
+  // Lectura IMU (MPU6050)
+  mpu.getEvent(&a, &g, &temp);
   datosVuelo.accX = a.acceleration.x;
   datosVuelo.accY = a.acceleration.y;
   datosVuelo.accZ = a.acceleration.z;
 
-  // datos del giroscopio en deg/s
+  // Conversión de Rad/s a Deg/s
   datosVuelo.gyX = g.gyro.x * (180.0 / PI);
   datosVuelo.gyY = g.gyro.y * (180.0 / PI);
   datosVuelo.gyZ = g.gyro.z * (180.0 / PI);
 
-  // obtenemos los datos del magenetometro
+  // Lectura Magnetómetro
   mag.getEvent(&m);
   datosVuelo.magX = m.magnetic.x;
   datosVuelo.magY = m.magnetic.y;
   datosVuelo.magZ = m.magnetic.z;
 
-  // --- CALCULO DE RUMBO CON DECLINACIÓN---
+  // --- ALGORITMO DE RUMBO (COMPASS HEADING) ---
   float headingRad = atan2(datosVuelo.magY, datosVuelo.magX);
 
-  // Aplicar la Declinación Magnética de Tenango (3.833 grados convertidos a radianes)
+  // Corrección por Declinación Magnética
   float declinationRad = ANGULO_DECLINACION_DEG * (PI / 180.0);
   headingRad += declinationRad;
 
-  // Normalización
+  // Normalización angular [0, 2*PI]
   if (headingRad < 0) headingRad += 2 * PI;
   if (headingRad > 2 * PI) headingRad -= 2 * PI;
 
-  // Convertir a Grados
-  float headingDeg = headingRad * 180.0 / PI;
-  datosVuelo.heading = headingDeg;
+  datosVuelo.heading = headingRad * 180.0 / PI;
 
-  // ----------------------------------------------------
-
+  // Lectura Barométrica
   datosVuelo.pressure = bme.readPressure();
-  datosVuelo.alturaMSNM = bme.readAltitude(SEALEVELPRESSURE_HPA);  // obtenemos altura directamente de la libreria
-  datosVuelo.alturaRelativa = datosVuelo.alturaMSNM - alturaIni;   // calculamos la altura relativa con respecto al suelo.
+  datosVuelo.alturaMSNM = bme.readAltitude(SEALEVELPRESSURE_HPA);
+  datosVuelo.alturaRelativa = datosVuelo.alturaMSNM - alturaIni;
 
+  // Lectura de Tensión de Batería (Divisor de voltaje)
+  // ADC 12-bit (0-4095) -> Referencia 3.3V -> Factor de escala del divisor (x3.0)
   uint16_t rawBat = analogRead(voltageMeasurement);
   datosVuelo.voltajeBateria = (rawBat / 4095.0) * 3.3 * 3.0;
 }
 
+/**
+ * @brief Serialización y escritura en búfer SD.
+ * Formato CSV estándar para post-procesamiento.
+ */
 void guardarDatosSD() {
-
   registro.printf("%lu,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%d,%d\n",
                   datosVuelo.tiempo,
                   datosVuelo.pressure,
@@ -386,68 +390,67 @@ void guardarDatosSD() {
                   datosVuelo.voltajeBateria,
                   datosVuelo.flagIgnitor,
                   datosVuelo.flagApogeo);
-
-  registro.flush();
+                  
+  registro.flush(); // Fuerza escritura física en tarjeta (trade-off: latencia vs seguridad de datos)
 }
 
+/**
+ * @brief Lógica de detección de Apogeo Barométrico.
+ * Utiliza un contador de persistencia para filtrar ruido.
+ * * Condición de disparo:
+ * 1. Altitud actual < (Altitud Máxima - Hysteresis).
+ * 2. Condición mantenida por 'limiteMuestras' ciclos consecutivos.
+ */
 void detectarApogeo() {
-
+  // Guardas de seguridad: no disparar si ya se disparó o si estamos en rampa de lanzamiento (< alturaMin)
   if (apogeoDetectado || datosVuelo.alturaRelativa < alturaMin) return;
 
+  // Actualización de máximo global
   if (datosVuelo.alturaRelativa > datosVuelo.alturaMax) {
     datosVuelo.alturaMax = datosVuelo.alturaRelativa;
-    contadorDescenso = 0;  // reiniciamos contador porque seguimos subiendo
+    contadorDescenso = 0; // Reset de contador si seguimos subiendo
   }
-  // verificar descenso (restamos 0.5 para evitar valores inestables)
+  // Verificación de descenso con histéresis de 1.5m para filtrar ráfagas de viento/ruido
   else if (datosVuelo.alturaRelativa < (datosVuelo.alturaMax - 1.5)) {
     contadorDescenso++;
   }
-  // confirmamos apogeo
+
+  // Confirmación de evento Apogeo
   if (contadorDescenso >= limiteMuestras) {
     apogeoDetectado = true;
-    Serial.println("APOGEO DETECTADO");
 
-    // encendemos ignitores
+    // Activación de etapa de recuperación
     digitalWrite(recuIgnitor1, HIGH);
     digitalWrite(recuIgnitor2, HIGH);
 
     ignitorActivo = true;
     inicioIgnitores = millis();
-    
 
-    pixels.setPixelColor(0, pixels.Color(255, 0, 255));  // Naranja -> descenso
+    pixels.setPixelColor(0, pixels.Color(255, 0, 255)); // Magenta (Descenso)
     pixels.show();
   }
 }
 
-// Funciones auxiliares
-void playStartup() {
-  tone(buzzer, 880, 100);
-  delay(100);
-  tone(buzzer, 1109, 100);
-  delay(100);
-  tone(buzzer, 1318, 100);
-  delay(100);
-  noTone(buzzer);
+// --- Funciones de Feedback Acústico (Buzzer) ---
 
-  delay(200);
-  tone(buzzer, 1760, 400);
-  delay(400);
+void playStartup() {
+  tone(buzzer, 880, 100); delay(100);
+  tone(buzzer, 1109, 100); delay(100);
+  tone(buzzer, 1318, 100); delay(100);
+  noTone(buzzer); delay(200);
+  tone(buzzer, 1760, 400); delay(400);
   noTone(buzzer);
 }
+
 void playSuccess() {
-  tone(buzzer, 880, 100);
-  delay(200);
-  tone(buzzer, 1109, 100);
-  delay(200);
+  tone(buzzer, 880, 100); delay(200);
+  tone(buzzer, 1109, 100); delay(200);
   noTone(buzzer);
 }
+
 void playFailure() {
-  tone(buzzer, 500, 200);
-  delay(200);
-  tone(buzzer, 300, 200);
-  delay(200);
-  tone(buzzer, 150, 400);
-  delay(400);
+  tone(buzzer, 500, 200); delay(200);
+  tone(buzzer, 300, 200); delay(200);
+  tone(buzzer, 150, 400); delay(400);
   noTone(buzzer);
 }
