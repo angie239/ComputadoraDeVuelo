@@ -90,7 +90,8 @@ struct dataPacket {
   float gyX, gyY, gyZ;        // Velocidad angular [deg/s]
   float accX, accY, accZ;     // Aceleración lineal [m/s^2]
   float voltajeBateria;       // Tensión de alimentación [V]
-  bool flagIgnitor, flagApogeo; // Estados lógicos
+  bool flagIgnitor = false ; // Estados lógicos
+  bool flagApogeo = false ;
 };
 dataPacket datosVuelo;
 
@@ -112,6 +113,9 @@ const unsigned long duracionIgnitores = 750; // Tiempo de activación pirotécni
 unsigned long tiempoUltimoLog = 0;
 unsigned long tiempoUltimaImpresion = 0;
 bool ledState;
+
+// Inicialización de banderas
+
 
 /**
  * @brief Rutina de Servicio de Interrupción (ISR) para Parada de Emergencia.
@@ -135,7 +139,9 @@ void setup() {
   pixels.clear();
   pixels.show();
   pixels.setPixelColor(0, pixels.Color(148, 0, 211)); // Estado: INICIO (Morado)
+  
   pixels.show();
+  
 
   // Inicialización de Protocolos de Comunicación
   Wire.begin(SDA, SCL);            // I2C
@@ -261,6 +267,8 @@ void loop() {
     // ESTADO: DORMIDO (Azul)
     pixels.setPixelColor(0, pixels.Color(80, 40, 200));
     pixels.show();
+    playSaved();
+    
     esp_deep_sleep_start();
   }
 
@@ -425,20 +433,32 @@ void detectarApogeo() {
 
     ignitorActivo = true;
     inicioIgnitores = millis();
+    datosVuelo.flagApogeo = true;
+    datosVuelo.flagIgnitor = true;
 
     pixels.setPixelColor(0, pixels.Color(255, 0, 255)); // Magenta (Descenso)
     pixels.show();
+    playApogee();
   }
 }
 
-// --- Funciones de Feedback Acústico (Buzzer) ---
 
+void detectarAterrizaje() {
+
+  
+
+}
+
+// --- Funciones de Feedback Acústico (Buzzer) ---
 void playStartup() {
-  tone(buzzer, 880, 100); delay(100);
-  tone(buzzer, 1109, 100); delay(100);
-  tone(buzzer, 1318, 100); delay(100);
-  noTone(buzzer); delay(200);
-  tone(buzzer, 1760, 400); delay(400);
+  // Secuencia: Sol5 -> Do6 -> Mi6 -> Sol6 -> Mi6 -> Sol6 (Final largo)
+  tone(buzzer, 784, 120);  delay(120); // Sol5
+  tone(buzzer, 1047, 120); delay(120); // Do6
+  tone(buzzer, 1319, 120); delay(120); // Mi6
+  tone(buzzer, 1568, 120); delay(400); // Sol6
+  tone(buzzer, 1319, 120); delay(120); // Mi6
+  tone(buzzer, 1568, 400); delay(400); // Sol6 (Final largo)
+  
   noTone(buzzer);
 }
 
@@ -452,5 +472,52 @@ void playFailure() {
   tone(buzzer, 500, 200); delay(200);
   tone(buzzer, 300, 200); delay(200);
   tone(buzzer, 150, 400); delay(400);
+  noTone(buzzer);
+}
+
+void playApogee(){
+  // --- Arpegio 1 (Base en Do) ---
+  tone(buzzer, 196, 80); delay(80); // Sol3
+  tone(buzzer, 262, 80); delay(80); // Do4
+  tone(buzzer, 330, 80); delay(80); // Mi4
+  tone(buzzer, 392, 80); delay(80); // Sol4
+  tone(buzzer, 523, 80); delay(80); // Do5
+  tone(buzzer, 659, 80); delay(80); // Mi5
+  tone(buzzer, 784, 80); delay(80); // Sol5
+  tone(buzzer, 659, 80); delay(80); // Mi5
+
+  // --- Arpegio 2 (Sube medio tono - La Bemol) ---
+  tone(buzzer, 208, 80); delay(80); // Sol#3
+  tone(buzzer, 262, 80); delay(80); // Do4
+  tone(buzzer, 311, 80); delay(80); // Re#4
+  tone(buzzer, 415, 80); delay(80); // Sol#4
+  tone(buzzer, 523, 80); delay(80); // Do5
+  tone(buzzer, 622, 80); delay(80); // Re#5
+  tone(buzzer, 831, 80); delay(80); // Sol#5
+  tone(buzzer, 622, 80); delay(80); // Re#5
+
+  // --- Arpegio 3 (Sube un tono - Si Bemol) ---
+  tone(buzzer, 233, 80); delay(80); // La#3
+  tone(buzzer, 294, 80); delay(80); // Re4
+  tone(buzzer, 349, 80); delay(80); // Fa4
+  tone(buzzer, 466, 80); delay(80); // La#4
+  tone(buzzer, 587, 80); delay(80); // Re5
+  tone(buzzer, 698, 80); delay(80); // Fa5
+  tone(buzzer, 932, 80); delay(80); // La#5
+  tone(buzzer, 698, 80); delay(80); // Fa5
+
+  // --- Nota Final (Do6 - Victoria) ---
+  noTone(buzzer); delay(50);         // Pequeña pausa dramática
+  tone(buzzer, 1047, 600); delay(600); // Do6 Largo
+  
+  noTone(buzzer);
+}
+
+void playSaved() {
+  // Secuencia "USB Conectado" / "Archivo Guardado" (Do -> Mi -> Sol)
+  tone(buzzer, 523, 100); delay(100); // Do5
+  tone(buzzer, 659, 100); delay(100); // Mi5
+  tone(buzzer, 784, 300); delay(300); // Sol5 (Final suave)
+  
   noTone(buzzer);
 }
