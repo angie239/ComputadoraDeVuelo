@@ -100,7 +100,7 @@ float prom = 0;
 float alturaIni = 0.0;          // Referencia de altitud base (Ground Level)
 int contadorDescenso = 0;       // Acumulador para filtro de detección de apogeo
 const int limiteMuestras = 20;  // Ventana de confirmación (muestras consecutivas descendiendo)
-const float alturaMin = 2.0;    // Altitud mínima AGL para armar sistema de recuperación
+const float alturaMin = 20.0;    // Altitud mínima AGL para armar sistema de recuperación
 static float altitudFiltrada = 0.0;
 
 // Banderas de Estado de Misión
@@ -444,7 +444,6 @@ void detectarApogeo() {
 
     pixels.setPixelColor(0, pixels.Color(255, 0, 255)); // Magenta (Descenso)
     pixels.show();
-    playApogee();
   }
 }
 
@@ -481,49 +480,158 @@ void playFailure() {
   noTone(buzzer);
 }
 
-void playApogee(){
-  // --- Arpegio 1 (Base en Do) ---
-  tone(buzzer, 196, 80); delay(80); // Sol3
-  tone(buzzer, 262, 80); delay(80); // Do4
-  tone(buzzer, 330, 80); delay(80); // Mi4
-  tone(buzzer, 392, 80); delay(80); // Sol4
-  tone(buzzer, 523, 80); delay(80); // Do5
-  tone(buzzer, 659, 80); delay(80); // Mi5
-  tone(buzzer, 784, 80); delay(80); // Sol5
-  tone(buzzer, 659, 80); delay(80); // Mi5
-
-  // --- Arpegio 2 (Sube medio tono - La Bemol) ---
-  tone(buzzer, 208, 80); delay(80); // Sol#3
-  tone(buzzer, 262, 80); delay(80); // Do4
-  tone(buzzer, 311, 80); delay(80); // Re#4
-  tone(buzzer, 415, 80); delay(80); // Sol#4
-  tone(buzzer, 523, 80); delay(80); // Do5
-  tone(buzzer, 622, 80); delay(80); // Re#5
-  tone(buzzer, 831, 80); delay(80); // Sol#5
-  tone(buzzer, 622, 80); delay(80); // Re#5
-
-  // --- Arpegio 3 (Sube un tono - Si Bemol) ---
-  tone(buzzer, 233, 80); delay(80); // La#3
-  tone(buzzer, 294, 80); delay(80); // Re4
-  tone(buzzer, 349, 80); delay(80); // Fa4
-  tone(buzzer, 466, 80); delay(80); // La#4
-  tone(buzzer, 587, 80); delay(80); // Re5
-  tone(buzzer, 698, 80); delay(80); // Fa5
-  tone(buzzer, 932, 80); delay(80); // La#5
-  tone(buzzer, 698, 80); delay(80); // Fa5
-
-  // --- Nota Final (Do6 - Victoria) ---
-  noTone(buzzer); delay(50);         // Pequeña pausa dramática
-  tone(buzzer, 1047, 600); delay(600); // Do6 Largo
-  
-  noTone(buzzer);
-}
-
 void playSaved() {
-  // Secuencia "USB Conectado" / "Archivo Guardado" (Do -> Mi -> Sol)
-  tone(buzzer, 523, 100); delay(100); // Do5
-  tone(buzzer, 659, 100); delay(100); // Mi5
-  tone(buzzer, 784, 300); delay(300); // Sol5 (Final suave)
-  
-  noTone(buzzer);
+  // He escalado los tiempos (aprox x1.35) para reducir la velocidad
+  // Referencia anterior: 62ms -> 85ms | 81ms -> 110ms
+  // Referencia anterior: 125ms -> 170ms | 162ms -> 220ms
+
+  // --- INTRO ---
+  tone(buzzer, 622, 85); delay(110);  // DS5
+  tone(buzzer, 659, 85); delay(110);  // E5
+  tone(buzzer, 740, 85); delay(110);  // FS5
+  noTone(buzzer);        delay(110);  // Silencio
+  tone(buzzer, 988, 85); delay(110);  // B5
+  tone(buzzer, 659, 85); delay(110);  // E5
+  tone(buzzer, 622, 85); delay(110);  // DS5
+  tone(buzzer, 659, 85); delay(110);  // E5
+  tone(buzzer, 740, 85); delay(110);  // FS5
+  tone(buzzer, 988, 85); delay(110);  // B5
+  tone(buzzer, 1245, 85); delay(110); // DS6
+  tone(buzzer, 1319, 85); delay(110); // E6
+  tone(buzzer, 1245, 85); delay(110); // DS6
+  tone(buzzer, 932, 85); delay(110);  // AS5
+  tone(buzzer, 988, 85); delay(110);  // B5
+  noTone(buzzer);        delay(110);  // Silencio
+
+  tone(buzzer, 740, 85); delay(110);  // FS5
+  noTone(buzzer);        delay(110);  // Silencio
+  tone(buzzer, 622, 85); delay(110);  // DS5
+  tone(buzzer, 659, 85); delay(110);  // E5
+  tone(buzzer, 740, 85); delay(110);  // FS5
+  noTone(buzzer);        delay(110);  // Silencio
+  tone(buzzer, 988, 170); delay(220); // B5 (Nota larga)
+  tone(buzzer, 1109, 85); delay(110); // CS6
+  tone(buzzer, 932, 85); delay(110);  // AS5
+  tone(buzzer, 988, 85); delay(110);  // B5
+  tone(buzzer, 1109, 85); delay(110); // CS6
+  tone(buzzer, 1319, 85); delay(110); // E6
+  tone(buzzer, 1245, 85); delay(110); // DS6
+  tone(buzzer, 1319, 85); delay(110); // E6
+  tone(buzzer, 1109, 85); delay(110); // CS6
+
+  // --- TEMA PRINCIPAL ---
+  tone(buzzer, 370, 170); delay(220); // FS4
+  tone(buzzer, 415, 170); delay(220); // GS4
+  tone(buzzer, 294, 85); delay(110);  // D4
+  tone(buzzer, 311, 85); delay(110);  // DS4
+  tone(buzzer, 93, 85); delay(110);   // FS2
+  tone(buzzer, 277, 85); delay(110);  // CS4
+  tone(buzzer, 294, 85); delay(110);  // D4
+  tone(buzzer, 277, 85); delay(110);  // CS4
+  tone(buzzer, 247, 170); delay(220); // B3
+  tone(buzzer, 247, 170); delay(220); // B3
+  tone(buzzer, 277, 170); delay(220); // CS4
+
+  tone(buzzer, 294, 170); delay(220); // D4
+  tone(buzzer, 294, 85); delay(110);  // D4
+  tone(buzzer, 277, 85); delay(110);  // CS4
+  tone(buzzer, 247, 85); delay(110);  // B3
+  tone(buzzer, 277, 85); delay(110);  // CS4
+  tone(buzzer, 311, 85); delay(110);  // DS4
+  tone(buzzer, 370, 85); delay(110);  // FS4
+  tone(buzzer, 415, 85); delay(110);  // GS4
+  tone(buzzer, 311, 85); delay(110);  // DS4
+  tone(buzzer, 370, 85); delay(110);  // FS4
+  tone(buzzer, 277, 85); delay(110);  // CS4
+  tone(buzzer, 311, 85); delay(110);  // DS4
+  tone(buzzer, 247, 85); delay(110);  // B3
+  tone(buzzer, 277, 85); delay(110);  // CS4
+  tone(buzzer, 247, 85); delay(110);  // B3
+
+  tone(buzzer, 311, 170); delay(220); // DS4
+  tone(buzzer, 370, 170); delay(220); // FS4
+  tone(buzzer, 415, 85); delay(110);  // GS4
+  tone(buzzer, 311, 85); delay(110);  // DS4
+  tone(buzzer, 370, 85); delay(110);  // FS4
+  tone(buzzer, 277, 85); delay(110);  // CS4
+  tone(buzzer, 311, 85); delay(110);  // DS4
+  tone(buzzer, 247, 85); delay(110);  // B3
+  tone(buzzer, 294, 85); delay(110);  // D4
+  tone(buzzer, 311, 85); delay(110);  // DS4
+  tone(buzzer, 294, 85); delay(110);  // D4
+  tone(buzzer, 277, 85); delay(110);  // CS4
+  tone(buzzer, 247, 85); delay(110);  // B3
+  tone(buzzer, 277, 85); delay(110);  // CS4
+
+  tone(buzzer, 294, 170); delay(220); // D4
+  tone(buzzer, 247, 85); delay(110);  // B3
+  tone(buzzer, 277, 85); delay(110);  // CS4
+  tone(buzzer, 311, 85); delay(110);  // DS4
+  tone(buzzer, 370, 85); delay(110);  // FS4
+  tone(buzzer, 277, 85); delay(110);  // CS4
+  tone(buzzer, 294, 85); delay(110);  // D4
+  tone(buzzer, 277, 85); delay(110);  // CS4
+  tone(buzzer, 247, 85); delay(110);  // B3
+  tone(buzzer, 277, 85); delay(110);  // CS4
+  tone(buzzer, 247, 170); delay(220); // B3
+  tone(buzzer, 277, 170); delay(220); // CS4
+
+  // --- REPETICIÓN TEMA ---
+  tone(buzzer, 370, 170); delay(220); // FS4
+  tone(buzzer, 415, 170); delay(220); // GS4
+  tone(buzzer, 294, 85); delay(110);  // D4
+  tone(buzzer, 311, 85); delay(110);  // DS4
+  tone(buzzer, 93, 85); delay(110);   // FS2
+  tone(buzzer, 277, 85); delay(110);  // CS4
+  tone(buzzer, 294, 85); delay(110);  // D4
+  tone(buzzer, 277, 85); delay(110);  // CS4
+  tone(buzzer, 247, 170); delay(220); // B3
+  tone(buzzer, 247, 170); delay(220); // B3
+  tone(buzzer, 277, 170); delay(220); // CS4
+
+  tone(buzzer, 294, 170); delay(220); // D4
+  tone(buzzer, 294, 85); delay(110);  // D4
+  tone(buzzer, 277, 85); delay(110);  // CS4
+  tone(buzzer, 247, 85); delay(110);  // B3
+  tone(buzzer, 277, 85); delay(110);  // CS4
+  tone(buzzer, 311, 85); delay(110);  // DS4
+  tone(buzzer, 370, 85); delay(110);  // FS4
+  tone(buzzer, 415, 85); delay(110);  // GS4
+  tone(buzzer, 311, 85); delay(110);  // DS4
+  tone(buzzer, 370, 85); delay(110);  // FS4
+  tone(buzzer, 277, 85); delay(110);  // CS4
+  tone(buzzer, 311, 85); delay(110);  // DS4
+  tone(buzzer, 247, 85); delay(110);  // B3
+  tone(buzzer, 277, 85); delay(110);  // CS4
+  tone(buzzer, 247, 85); delay(110);  // B3
+
+  tone(buzzer, 311, 170); delay(220); // DS4
+  tone(buzzer, 370, 170); delay(220); // FS4
+  tone(buzzer, 415, 85); delay(110);  // GS4
+  tone(buzzer, 311, 85); delay(110);  // DS4
+  tone(buzzer, 370, 85); delay(110);  // FS4
+  tone(buzzer, 277, 85); delay(110);  // CS4
+  tone(buzzer, 311, 85); delay(110);  // DS4
+  tone(buzzer, 247, 85); delay(110);  // B3
+  tone(buzzer, 294, 85); delay(110);  // D4
+  tone(buzzer, 311, 85); delay(110);  // DS4
+  tone(buzzer, 294, 85); delay(110);  // D4
+  tone(buzzer, 277, 85); delay(110);  // CS4
+  tone(buzzer, 247, 85); delay(110);  // B3
+  tone(buzzer, 277, 85); delay(110);  // CS4
+
+  tone(buzzer, 294, 170); delay(220); // D4
+  tone(buzzer, 247, 85); delay(110);  // B3
+  tone(buzzer, 277, 85); delay(110);  // CS4
+  tone(buzzer, 311, 85); delay(110);  // DS4
+  tone(buzzer, 370, 85); delay(110);  // FS4
+  tone(buzzer, 277, 85); delay(110);  // CS4
+  tone(buzzer, 294, 85); delay(110);  // D4
+  tone(buzzer, 277, 85); delay(110);  // CS4
+  tone(buzzer, 247, 85); delay(110);  // B3
+  tone(buzzer, 277, 85); delay(110);  // CS4
+  tone(buzzer, 247, 170); delay(220); // B3
+  tone(buzzer, 247, 170); delay(220); // B3
+
+  noTone(buzzer); // Apagar buzzer al terminar
 }
