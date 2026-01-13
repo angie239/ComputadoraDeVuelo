@@ -100,7 +100,7 @@ float prom = 0;
 float alturaIni = 0.0;          // Referencia de altitud base (Ground Level)
 int contadorDescenso = 0;       // Acumulador para filtro de detección de apogeo
 const int limiteMuestras = 20;  // Ventana de confirmación (muestras consecutivas descendiendo)
-const float alturaMin = 2.0;    // Altitud mínima AGL para armar sistema de recuperación
+const float alturaMin = 20.0;    // Altitud mínima AGL para armar sistema de recuperación
 static float altitudFiltrada = 0.0;
 
 // Banderas de Estado de Misión
