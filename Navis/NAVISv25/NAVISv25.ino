@@ -399,7 +399,13 @@ void guardarDatosSD() {
                   datosVuelo.flagIgnitor,
                   datosVuelo.flagApogeo);
                   
-  registro.flush(); // Fuerza escritura física en tarjeta (trade-off: latencia vs seguridad de datos)
+  static int contadorFlush = 0; 
+  contadorFlush++;
+
+  if (contadorFlush >= 50) { // Flush cada 0.5s 
+      registro.flush(); // Fuerza escritura física en tarjeta 
+      contadorFlush = 0;
+  }
 }
 
 /**
