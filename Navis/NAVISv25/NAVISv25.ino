@@ -1,3 +1,4 @@
+
 /*
  * PROYECTO: NAVIS v1.1 - Computadora de Vuelo
  * ORGANIZACIÓN: Curiosity Aerospace (Propulsión UNAM)
@@ -100,7 +101,7 @@ float prom = 0;
 float alturaIni = 0.0;          // Referencia de altitud base (Ground Level)
 int contadorDescenso = 0;       // Acumulador para filtro de detección de apogeo
 const int limiteMuestras = 20;  // Ventana de confirmación (muestras consecutivas descendiendo)
-const float alturaMin = 20.0;    // Altitud mínima AGL para armar sistema de recuperación
+const float alturaMin = 2.0;    // Altitud mínima AGL para armar sistema de recuperación
 static float altitudFiltrada = 0.0;
 
 // Banderas de Estado de Misión
@@ -274,8 +275,8 @@ void loop() {
 
   // --- SCHEDULER DE TAREAS ---
   
-  // Tarea 1: Adquisición y Control (100 Hz / 10ms)
-  if (ahora - tiempoUltimoLog >= 10) { //SD con (C10) UHS-I
+  // Tarea 1: Adquisición y Control (50 Hz / 20ms)
+  if (ahora - tiempoUltimoLog >= 20) { 
     tiempoUltimoLog = ahora;
     
     leerSensores();     // Lectura de ADC y buses I2C
@@ -399,13 +400,7 @@ void guardarDatosSD() {
                   datosVuelo.flagIgnitor,
                   datosVuelo.flagApogeo);
                   
-  static int contadorFlush = 0; 
-  contadorFlush++;
-
-  if (contadorFlush >= 50) { // Flush cada 0.5s 
-      registro.flush(); // Fuerza escritura física en tarjeta 
-      contadorFlush = 0;
-  }
+  registro.flush(); // Fuerza escritura física en tarjeta (trade-off: latencia vs seguridad de datos)
 }
 
 /**
@@ -634,12 +629,4 @@ void playSaved() {
   tone(buzzer, 247, 170); delay(220); // B3
 
   noTone(buzzer); // Apagar buzzer al terminar
-}void setup() {
-  // put your setup code here, to run once:
-
-}
-
-void loop() {
-  // put your main code here, to run repeatedly:
-
 }
