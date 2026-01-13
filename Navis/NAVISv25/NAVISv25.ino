@@ -399,13 +399,7 @@ void guardarDatosSD() {
                   datosVuelo.flagIgnitor,
                   datosVuelo.flagApogeo);
                   
-  static int contadorFlush = 0; 
-  contadorFlush++;
-
-  if (contadorFlush >= 50) { // Flush cada 0.5s 
-      registro.flush(); // Fuerza escritura física en tarjeta 
-      contadorFlush = 0;
-  }
+  registro.flush(); // Fuerza escritura física en tarjeta (trade-off: latencia vs seguridad de datos)
 }
 
 /**
@@ -634,4 +628,12 @@ void playSaved() {
   tone(buzzer, 247, 170); delay(220); // B3
 
   noTone(buzzer); // Apagar buzzer al terminar
+}void setup() {
+  // put your setup code here, to run once:
+
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+
 }
