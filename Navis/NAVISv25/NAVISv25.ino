@@ -274,8 +274,8 @@ void loop() {
 
   // --- SCHEDULER DE TAREAS ---
   
-  // Tarea 1: Adquisición y Control (40 Hz / 25ms)
-  if (ahora - tiempoUltimoLog >= 25) { 
+  // Tarea 1: Adquisición y Control (100 Hz / 10ms)
+  if (ahora - tiempoUltimoLog >= 10) { //SD con (C10) UHS-I
     tiempoUltimoLog = ahora;
     
     leerSensores();     // Lectura de ADC y buses I2C
@@ -399,7 +399,13 @@ void guardarDatosSD() {
                   datosVuelo.flagIgnitor,
                   datosVuelo.flagApogeo);
                   
-  registro.flush(); // Fuerza escritura física en tarjeta (trade-off: latencia vs seguridad de datos)
+  static int contadorFlush = 0; 
+  contadorFlush++;
+
+  if (contadorFlush >= 50) { // Flush cada 0.5s 
+      registro.flush(); // Fuerza escritura física en tarjeta 
+      contadorFlush = 0;
+  }
 }
 
 /**
