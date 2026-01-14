@@ -5,7 +5,7 @@
  * PLATAFORMA: ESP32-S3
  * * DESCRIPCIÓN:
  * Firmware de adquisición de datos y control de recuperación.
- * Implementa un sistema de registro de datos (Datalogger) a 20Hz y detección 
+ * Implementa un sistema de registro de datos (Datalogger) a 50Hz y detección 
  * de apogeo barométrico con filtrado de ventana para despliegue de paracaídas.
  * * ESTRUCTURA DE DATOS:
  * Se utiliza 'struct dataPacket' para serialización eficiente y 
@@ -101,14 +101,17 @@ float prom = 0;
 float alturaIni = 0.0;          // Referencia de altitud base (Ground Level)
 int contadorDescenso = 0;       // Acumulador para filtro de detección de apogeo
 const int limiteMuestras = 20;  // Ventana de confirmación (muestras consecutivas descendiendo)
-const float alturaMin = 2.0;    // Altitud mínima AGL para armar sistema de recuperación
+const float alturaMin = 20.0;    // Altitud mínima AGL para armar sistema de recuperación
 static float altitudFiltrada = 0.0;
 
 // Banderas de Estado de Misión
 bool apogeoDetectado = false;
 bool ignitorActivo = false;
+bool eMatchReady = false;
 unsigned long inicioIgnitores = 0;
 const unsigned long duracionIgnitores = 750; // Tiempo de activación pirotécnica [ms]
+
+
 
 // Control de Tiempos (Scheduler)
 unsigned long tiempoUltimoLog = 0;
@@ -253,6 +256,7 @@ void setup() {
   // ESTADO: GRABACIÓN ACTIVA
   pixels.setPixelColor(0, pixels.Color(0, 255, 0)); // Verde Fijo
   pixels.show();
+
 }
 
 void loop() {
@@ -292,6 +296,13 @@ void loop() {
       digitalWrite(recuIgnitor2, LOW);
       ignitorActivo = false;
     }
+  }
+
+  if(!eMatchReady){
+    if(datosVuelo.alturaRelativa >= alturaMin){
+      eMatchReady = true;
+    }
+
   }
 }
 
@@ -412,7 +423,7 @@ void guardarDatosSD() {
  */
 void detectarApogeo() {
   // Guardas de seguridad: no disparar si ya se disparó o si estamos en rampa de lanzamiento (< alturaMin)
-  if (apogeoDetectado || datosVuelo.alturaRelativa < alturaMin) return;
+  if (apogeoDetectado || !eMatchReady) return;
 
   // Actualización de máximo global
   if (datosVuelo.alturaRelativa > datosVuelo.alturaMax) {
@@ -422,6 +433,9 @@ void detectarApogeo() {
   // Verificación de descenso con histéresis de 1.5m para filtrar ráfagas de viento/ruido
   else if (datosVuelo.alturaRelativa < (datosVuelo.alturaMax - 1.5)) {
     contadorDescenso++;
+  }
+  else{
+    contadorDescenso = 0;
   }
 
   // Confirmación de evento Apogeo
@@ -442,22 +456,23 @@ void detectarApogeo() {
   }
 }
 
+// --- Funciones de Feedback Acústico (Buzzer) ---
+void playReading(){
 
-void detectarAterrizaje() {
-
-  
+  tone(buzzer, 1047, 120); delay(120); // Do6
+  tone(buzzer, 1319, 120); delay(120); // Mi6
+  tone(buzzer, 1568, 120); delay(120); // Sol6
 
 }
 
-// --- Funciones de Feedback Acústico (Buzzer) ---
 void playStartup() {
-  // Secuencia: Sol5 -> Do6 -> Mi6 -> Sol6 -> Mi6 -> Sol6 (Final largo)
+  
   tone(buzzer, 784, 120);  delay(120); // Sol5
   tone(buzzer, 1047, 120); delay(120); // Do6
   tone(buzzer, 1319, 120); delay(120); // Mi6
   tone(buzzer, 1568, 120); delay(400); // Sol6
   tone(buzzer, 1319, 120); delay(120); // Mi6
-  tone(buzzer, 1568, 400); delay(400); // Sol6 (Final largo)
+  tone(buzzer, 1568, 400); delay(400); // Sol6 
   
   noTone(buzzer);
 }
@@ -476,45 +491,7 @@ void playFailure() {
 }
 
 void playSaved() {
-  // He escalado los tiempos (aprox x1.35) para reducir la velocidad
-  // Referencia anterior: 62ms -> 85ms | 81ms -> 110ms
-  // Referencia anterior: 125ms -> 170ms | 162ms -> 220ms
-
-  // --- INTRO ---
-  tone(buzzer, 622, 85); delay(110);  // DS5
-  tone(buzzer, 659, 85); delay(110);  // E5
-  tone(buzzer, 740, 85); delay(110);  // FS5
-  noTone(buzzer);        delay(110);  // Silencio
-  tone(buzzer, 988, 85); delay(110);  // B5
-  tone(buzzer, 659, 85); delay(110);  // E5
-  tone(buzzer, 622, 85); delay(110);  // DS5
-  tone(buzzer, 659, 85); delay(110);  // E5
-  tone(buzzer, 740, 85); delay(110);  // FS5
-  tone(buzzer, 988, 85); delay(110);  // B5
-  tone(buzzer, 1245, 85); delay(110); // DS6
-  tone(buzzer, 1319, 85); delay(110); // E6
-  tone(buzzer, 1245, 85); delay(110); // DS6
-  tone(buzzer, 932, 85); delay(110);  // AS5
-  tone(buzzer, 988, 85); delay(110);  // B5
-  noTone(buzzer);        delay(110);  // Silencio
-
-  tone(buzzer, 740, 85); delay(110);  // FS5
-  noTone(buzzer);        delay(110);  // Silencio
-  tone(buzzer, 622, 85); delay(110);  // DS5
-  tone(buzzer, 659, 85); delay(110);  // E5
-  tone(buzzer, 740, 85); delay(110);  // FS5
-  noTone(buzzer);        delay(110);  // Silencio
-  tone(buzzer, 988, 170); delay(220); // B5 (Nota larga)
-  tone(buzzer, 1109, 85); delay(110); // CS6
-  tone(buzzer, 932, 85); delay(110);  // AS5
-  tone(buzzer, 988, 85); delay(110);  // B5
-  tone(buzzer, 1109, 85); delay(110); // CS6
-  tone(buzzer, 1319, 85); delay(110); // E6
-  tone(buzzer, 1245, 85); delay(110); // DS6
-  tone(buzzer, 1319, 85); delay(110); // E6
-  tone(buzzer, 1109, 85); delay(110); // CS6
-
-  // --- TEMA PRINCIPAL ---
+  // --- NYAN CAT SONG ---
   tone(buzzer, 370, 170); delay(220); // FS4
   tone(buzzer, 415, 170); delay(220); // GS4
   tone(buzzer, 294, 85); delay(110);  // D4
@@ -571,62 +548,5 @@ void playSaved() {
   tone(buzzer, 247, 170); delay(220); // B3
   tone(buzzer, 277, 170); delay(220); // CS4
 
-  // --- REPETICIÓN TEMA ---
-  tone(buzzer, 370, 170); delay(220); // FS4
-  tone(buzzer, 415, 170); delay(220); // GS4
-  tone(buzzer, 294, 85); delay(110);  // D4
-  tone(buzzer, 311, 85); delay(110);  // DS4
-  tone(buzzer, 93, 85); delay(110);   // FS2
-  tone(buzzer, 277, 85); delay(110);  // CS4
-  tone(buzzer, 294, 85); delay(110);  // D4
-  tone(buzzer, 277, 85); delay(110);  // CS4
-  tone(buzzer, 247, 170); delay(220); // B3
-  tone(buzzer, 247, 170); delay(220); // B3
-  tone(buzzer, 277, 170); delay(220); // CS4
-
-  tone(buzzer, 294, 170); delay(220); // D4
-  tone(buzzer, 294, 85); delay(110);  // D4
-  tone(buzzer, 277, 85); delay(110);  // CS4
-  tone(buzzer, 247, 85); delay(110);  // B3
-  tone(buzzer, 277, 85); delay(110);  // CS4
-  tone(buzzer, 311, 85); delay(110);  // DS4
-  tone(buzzer, 370, 85); delay(110);  // FS4
-  tone(buzzer, 415, 85); delay(110);  // GS4
-  tone(buzzer, 311, 85); delay(110);  // DS4
-  tone(buzzer, 370, 85); delay(110);  // FS4
-  tone(buzzer, 277, 85); delay(110);  // CS4
-  tone(buzzer, 311, 85); delay(110);  // DS4
-  tone(buzzer, 247, 85); delay(110);  // B3
-  tone(buzzer, 277, 85); delay(110);  // CS4
-  tone(buzzer, 247, 85); delay(110);  // B3
-
-  tone(buzzer, 311, 170); delay(220); // DS4
-  tone(buzzer, 370, 170); delay(220); // FS4
-  tone(buzzer, 415, 85); delay(110);  // GS4
-  tone(buzzer, 311, 85); delay(110);  // DS4
-  tone(buzzer, 370, 85); delay(110);  // FS4
-  tone(buzzer, 277, 85); delay(110);  // CS4
-  tone(buzzer, 311, 85); delay(110);  // DS4
-  tone(buzzer, 247, 85); delay(110);  // B3
-  tone(buzzer, 294, 85); delay(110);  // D4
-  tone(buzzer, 311, 85); delay(110);  // DS4
-  tone(buzzer, 294, 85); delay(110);  // D4
-  tone(buzzer, 277, 85); delay(110);  // CS4
-  tone(buzzer, 247, 85); delay(110);  // B3
-  tone(buzzer, 277, 85); delay(110);  // CS4
-
-  tone(buzzer, 294, 170); delay(220); // D4
-  tone(buzzer, 247, 85); delay(110);  // B3
-  tone(buzzer, 277, 85); delay(110);  // CS4
-  tone(buzzer, 311, 85); delay(110);  // DS4
-  tone(buzzer, 370, 85); delay(110);  // FS4
-  tone(buzzer, 277, 85); delay(110);  // CS4
-  tone(buzzer, 294, 85); delay(110);  // D4
-  tone(buzzer, 277, 85); delay(110);  // CS4
-  tone(buzzer, 247, 85); delay(110);  // B3
-  tone(buzzer, 277, 85); delay(110);  // CS4
-  tone(buzzer, 247, 170); delay(220); // B3
-  tone(buzzer, 247, 170); delay(220); // B3
-
-  noTone(buzzer); // Apagar buzzer al terminar
+    noTone(buzzer); // Apagar buzzer al terminar
 }
