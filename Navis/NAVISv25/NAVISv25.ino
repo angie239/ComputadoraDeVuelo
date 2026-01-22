@@ -108,6 +108,7 @@ static float altitudFiltrada = 0.0;
 bool apogeoDetectado = false;
 bool ignitorActivo = false;
 bool eMatchReady = false;
+unsigned long tiempoInicioSuelo = 0;
 unsigned long inicioIgnitores = 0;
 const unsigned long duracionIgnitores = 750; // Tiempo de activación pirotécnica [ms]
 
@@ -191,7 +192,7 @@ void setup() {
   bme.setSampling(Adafruit_BME280::MODE_NORMAL,
                   Adafruit_BME280::SAMPLING_X1,   // Temperatura
                   Adafruit_BME280::SAMPLING_X4,   // Presión (Alta resolución)
-                  Adafruit_BME280::SAMPLING_X1,   // Humedad
+                  Adafruit_BME280::SAMPLING_NONE,   // Humedad
                   Adafruit_BME280::FILTER_X2,     // Filtro IIR
                   Adafruit_BME280::STANDBY_MS_0_5); // Tasa de refresco máxima
 
@@ -256,7 +257,6 @@ void setup() {
   // ESTADO: GRABACIÓN ACTIVA
   pixels.setPixelColor(0, pixels.Color(0, 255, 0)); // Verde Fijo
   pixels.show();
-
 }
 
 void loop() {
@@ -264,19 +264,31 @@ void loop() {
 
   // Gestión de Parada de Emergencia (Interrupción por Software)
   if (stopRequested) {
-    leerSensores();     // Última lectura
-    guardarDatosSD();   // Escritura final
-    registro.flush();   // Vaciado de buffer SPI
-    registro.close();   // Cierre seguro de archivo
-
-    // ESTADO: DORMIDO (Azul)
-    pixels.setPixelColor(0, pixels.Color(80, 40, 200));
-    pixels.show();
+    cerrarSistema();
     playSaved();
-    
     esp_deep_sleep_start();
   }
 
+  if (apogeoDetectado) {
+    // Si estamos por debajo de 10 metros
+    if (datosVuelo.alturaRelativa <= 10.0) {
+      
+      // Si es la primera vez que detectamos <10m, iniciamos el cronómetro
+      if (tiempoInicioSuelo == 0) {
+        tiempoInicioSuelo = ahora;
+      }
+      
+      // Si ya pasaron 60 segundos (60000 ms) desde que se cumplió la condición
+      else if (ahora - tiempoInicioSuelo >= 60000) {
+        modoRecuperacion(); // Guardar, cerrar y pitar
+      }
+      
+    } else {
+      // Si por alguna razón la altura sube a > 10m (rebote, ruido, ráfaga),
+      // reseteamos el contador para asegurar que sean 60s CONTINUOS de suelo.
+      tiempoInicioSuelo = 0;
+    }
+  }
   // --- SCHEDULER DE TAREAS ---
   
   // Tarea 1: Adquisición y Control (50 Hz / 20ms)
@@ -302,7 +314,6 @@ void loop() {
     if(datosVuelo.alturaRelativa >= alturaMin){
       eMatchReady = true;
     }
-
   }
 }
 
@@ -410,8 +421,14 @@ void guardarDatosSD() {
                   datosVuelo.voltajeBateria,
                   datosVuelo.flagIgnitor,
                   datosVuelo.flagApogeo);
-                  
-  registro.flush(); // Fuerza escritura física en tarjeta (trade-off: latencia vs seguridad de datos)
+                
+  static int contadorFlush = 0;
+  contadorFlush++;
+  
+  if (contadorFlush >= 50 || datosVuelo.flagApogeo) {
+    registro.flush();
+    contadorFlush = 0;
+  }
 }
 
 /**
@@ -456,6 +473,49 @@ void detectarApogeo() {
   }
 }
 
+/**
+ * @brief Cierre del sistema
+ * Realiza una ultima lectura de sensores y guardado en SD
+ * Hace un ultimo flush para evitar datos en buffer
+ * cierra el archivo y setea NeoPixel en azul. 
+ */
+
+void cerrarSistema() {
+    leerSensores();      
+    guardarDatosSD();    
+    registro.flush();    
+    registro.close();    
+    pixels.setPixelColor(0, pixels.Color(0, 0, 255)); // Azul (Guardado)
+    pixels.show();
+}
+/**
+ * @brief Modo de recuperacion
+ * Reproduce en bucle dos notas en el buzzer y cambia de colores los leds para poder ser encontrado con mayor facilidad.
+ */
+void modoRecuperacion() {
+  cerrarSistema(); // Cierra archivo SD
+  
+  // Bucle infinito de baliza
+  while (true) {
+    tone(buzzer, 2000, 200); delay(250);
+    tone(buzzer, 2000, 200); delay(250);
+    
+    // Flash LED Blanco
+    pixels.setPixelColor(0, pixels.Color(255, 255, 255)); 
+    pixels.show();
+    delay(100);
+    pixels.setPixelColor(0, pixels.Color(0, 0, 0)); 
+    pixels.show();
+
+    delay(500); // Pausa larga
+    
+    // Opción para apagar manualmente con el botón
+    if (stopRequested) { 
+        playSaved();
+        esp_deep_sleep_start();
+    }
+  }
+}
 // --- Funciones de Feedback Acústico (Buzzer) ---
 void playReading(){
 
