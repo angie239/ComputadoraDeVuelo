@@ -160,8 +160,8 @@ void setup() {
   } else {
     mpuOk = true;
     // Configuración de rangos y filtro digital paso bajo (DLPF)
-    mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
-    mpu.setGyroRange(MPU6050_RANGE_500_DEG);
+    mpu.setAccelerometerRange(MPU6050_RANGE_16_G);
+    mpu.setGyroRange(MPU6050_RANGE_1000_DEG);
     mpu.setFilterBandwidth(MPU6050_BAND_21_HZ); // Filtro agresivo para vibración mecánica
     mpu.setI2CBypass(true); // Bypass activado para acceso directo al Magnetómetro auxiliar
   }
